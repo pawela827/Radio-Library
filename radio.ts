@@ -15,7 +15,7 @@ enum RadioPacketProperty {
  * Communicate data using radio packets
  */
 //% color=#E3008C weight=96 icon="\uf012" groups='["Group", "Broadcast", "Send", "Receive"]'
-namespace customradio {
+namespace rf {
 
     // keep in sync with CODAL
     const RADIO_MAX_PACKET_SIZE = 32;
