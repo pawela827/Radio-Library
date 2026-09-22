@@ -1,5 +1,6 @@
 #include "pxt.h"
 
+// test if the extension is actually installing
 // micro:bit dal
 #if defined(MICROBIT_H) 
 
