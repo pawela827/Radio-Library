@@ -1,13 +1,13 @@
 
 enum RadioPacketProperty {
-    //% blockIdentity=radio._packetProperty
+    //% blockIdentity=rf._packetProperty
     //% block="signal strength"
     SignalStrength = 2,
-    //% blockIdentity=radio._packetProperty
+    //% blockIdentity=rf._packetProperty
     //% block="time"
     Time = 0,
     //% block="serial number"
-    //% blockIdentity=radio._packetProperty
+    //% blockIdentity=rf._packetProperty
     SerialNumber = 1
 }
 
@@ -92,9 +92,9 @@ namespace rf {
     /**
      * Registers code to run when the radio receives a number.
      */
-    //% help=radio/on-received-number
-    //% blockId=radio_on_number_drag block="on radio received" blockGap=16
-    //% useLoc="radio.onDataPacketReceived" draggableParameters=reporter
+    //% help=rf/on-received-number
+    //% blockId=rf_on_number_drag block="on rf received" blockGap=16
+    //% useLoc="rf.onDataPacketReceived" draggableParameters=reporter
     //% group="Receive"
     //% weight=20
     export function onReceivedNumber(cb: (receivedNumber: number) => void) {
@@ -105,9 +105,9 @@ namespace rf {
     /**
      * Registers code to run when the radio receives a key value pair.
      */
-    //% help=radio/on-received-value
-    //% blockId=radio_on_value_drag block="on radio received" blockGap=16
-    //% useLoc="radio.onDataPacketReceived" draggableParameters=reporter
+    //% help=rf/on-received-value
+    //% blockId=rf_on_value_drag block="on rf received" blockGap=16
+    //% useLoc="rf.onDataPacketReceived" draggableParameters=reporter
     //% group="Receive"
     //% weight=19
     export function onReceivedValue(cb: (name: string, value: number) => void) {
@@ -118,9 +118,9 @@ namespace rf {
     /**
      * Registers code to run when the radio receives a string.
      */
-    //% help=radio/on-received-string
-    //% blockId=radio_on_string_drag block="on radio received" blockGap=16
-    //% useLoc="radio.onDataPacketReceived" draggableParameters=reporter
+    //% help=rf/on-received-string
+    //% blockId=rf_on_string_drag block="on rf received" blockGap=16
+    //% useLoc="rf.onDataPacketReceived" draggableParameters=reporter
     //% group="Receive"
     //% weight=18
     export function onReceivedString(cb: (receivedString: string) => void) {
@@ -131,9 +131,9 @@ namespace rf {
     /**
      * Registers code to run when the radio receives a buffer.
      */
-    //% help=radio/on-received-buffer blockHidden=1
-    //% blockId=radio_on_buffer_drag block="on radio received" blockGap=16
-    //% useLoc="radio.onDataPacketReceived" draggableParameters=reporter
+    //% help=rf/on-received-buffer blockHidden=1
+    //% blockId=rf_on_buffer_drag block="on rf received" blockGap=16
+    //% useLoc="rf.onDataPacketReceived" draggableParameters=reporter
     export function onReceivedBuffer(cb: (receivedBuffer: Buffer) => void) {
         init();
         onReceivedBufferHandler = cb;
@@ -143,9 +143,9 @@ namespace rf {
      * Returns properties of the last radio packet received.
      * @param type the type of property to retrieve from the last packet
      */
-    //% help=radio/received-packet
+    //% help=rf/received-packet
     //% blockGap=8
-    //% blockId=radio_received_packet block="received packet %type=radio_packet_property" blockGap=16
+    //% blockId=rf_received_packet block="received packet %type=rf_packet_property" blockGap=16
     //% type.label="property"
     //% group="Receive"
     //% weight=16
@@ -164,7 +164,7 @@ namespace rf {
      * Gets a packet property.
      * @param type the packet property type, eg: PacketProperty.time
      */
-    //% blockId=radio_packet_property block="%note"
+    //% blockId=rf_packet_property block="%note"
     //% shim=TD_ID blockHidden=1
     export function _packetProperty(type: RadioPacketProperty): number {
         return type;
@@ -278,9 +278,9 @@ namespace rf {
     /**
      * Broadcasts a number over radio to any connected micro:bit in the group.
      */
-    //% help=radio/send-number
+    //% help=rf/send-number
     //% weight=60
-    //% blockId=radio_datagram_send block="radio send number %value" blockGap=8
+    //% blockId=rf_datagram_send block="rf send number %value" blockGap=8
     //% value.label="value"
     //% group="Send"
     export function sendNumber(value: number) {
@@ -304,9 +304,9 @@ namespace rf {
     * @param name the field name (max 8 characters), eg: "name"
     * @param value the numeric value
     */
-    //% help=radio/send-value
+    //% help=rf/send-value
     //% weight=59
-    //% blockId=radio_datagram_send_value block="radio send|value %name|= %value" blockGap=8
+    //% blockId=rf_datagram_send_value block="rf send|value %name|= %value" blockGap=8
     //% name.label="name" value.label="value"
     //% group="Send"
     export function sendValue(name: string, value: number) {
@@ -328,9 +328,9 @@ namespace rf {
      * Broadcasts a string along with the device serial number
      * and running time to any connected micro:bit in the group.
      */
-    //% help=radio/send-string
+    //% help=rf/send-string
     //% weight=58
-    //% blockId=radio_datagram_send_string block="radio send string %msg"
+    //% blockId=rf_datagram_send_string block="rf send string %msg"
     //% value.label="value"
     //% msg.shadowOptions.toString=true
     //% group="Send"
@@ -344,7 +344,7 @@ namespace rf {
      * Broadcasts a buffer (up to 19 bytes long) along with the device serial number
      * and running time to any connected micro:bit in the group.
      */
-    //% help=radio/send-buffer
+    //% help=rf/send-buffer
     //% weight=57
     //% advanced=true
     export function sendBuffer(msg: Buffer) {
@@ -357,9 +357,9 @@ namespace rf {
     * Set the radio to transmit the serial number in each message.
     * @param transmit value indicating if the serial number is transmitted, eg: true
     */
-    //% help=radio/set-transmit-serial-number
+    //% help=rf/set-transmit-serial-number
     //% weight=8 blockGap=8
-    //% blockId=radio_set_transmit_serial_number block="radio set transmit serial number %transmit"
+    //% blockId=rf_set_transmit_serial_number block="rf set transmit serial number %transmit"
     //% transmit.label="value"
     //% advanced=true
     export function setTransmitSerialNumber(transmit: boolean) {
