@@ -1,6 +1,5 @@
 #include "pxt.h"
 
-// test if the extension is actually installing
 // micro:bit dal
 #if defined(MICROBIT_H) 
 
@@ -46,7 +45,7 @@ using namespace pxt;
 #endif
 
 //% color=#E3008C weight=96 icon="\uf012"
-namespace radio {
+namespace customradio {
     
 #if CODAL_RADIO_MICROBIT_DAL
     CODAL_RADIO* getRadio() {
