@@ -64,3 +64,4 @@ namespace pxsim.rf {
     }
 
 }
+(pxsim as any).rf = pxsim.rf;
