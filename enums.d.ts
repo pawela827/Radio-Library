@@ -1,5 +1,5 @@
 // Auto-generated. Do not edit.
-declare namespace customradio {
+declare namespace customaudio {
 }
 
 // Auto-generated. Do not edit. Really.
