@@ -369,7 +369,7 @@ namespace rf {
     function sendPacket(packet: RadioPacket) {
         packet.time = control.millis();
         packet.serial = transmittingSerial ? control.deviceSerialNumber() : 0;
-        radio.sendRawPacket(packet.data);
+        rf.sendRawPacket(packet.data);
     }
 
     function truncateString(str: string, bytes: number) {
