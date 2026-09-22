@@ -9,6 +9,10 @@
         "radio.ts",
         "targetoverrides.ts"
     ],
+    "simFiles": [
+        "sim/radio.ts",
+        "sim/state.ts"
+    ],
     "dependencies": {
         "core": "file:../core"
     }
