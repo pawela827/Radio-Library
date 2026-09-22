@@ -1,24 +1,16 @@
 {
-    "name": "Radio Library",
-    "description": "",
-    "dependencies": {
-        "core": "*",
-        "microphone": "*"
-    },
+    "name": "radio",
+    "description": "The radio services",
     "files": [
-        "main.ts",
-        "README.md"
+        "README.md",
+        "shims.d.ts",
+        "enums.d.ts",
+        "radio.cpp",
+        "radio.ts",
+        "targetoverrides.ts"
     ],
-    "testFiles": [
-        "test.ts"
-    ],
-    "targetVersions": {
-        "target": "9.0.12",
-        "targetId": "microbit"
-    },
-    "supportedTargets": [
-        "microbit"
-    ],
-    "preferredEditor": "tsprj",
-    "languageRestriction": "javascript-only"
+    "public": true,
+    "dependencies": {
+        "core": "file:../core"
+    }
 }
