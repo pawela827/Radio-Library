@@ -9,7 +9,6 @@
         "radio.ts",
         "targetoverrides.ts"
     ],
-    "public": true,
     "dependencies": {
         "core": "file:../core"
     }
