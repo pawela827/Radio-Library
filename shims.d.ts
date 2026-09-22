@@ -3,7 +3,7 @@
 
 
     //% color=#E3008C weight=96 icon="\uf012"
-declare namespace customradio {
+declare namespace rf {
 
     /**
      * Disables the radio for use as a multipoint sender/receiver.
