@@ -1,4 +1,3 @@
-
 enum RadioPacketProperty {
     //% blockIdentity=rf._packetProperty
     //% block="signal strength"
@@ -407,5 +406,70 @@ namespace rf {
             default:
                 return undefined;
         }
+    }
+
+    /**
+     * A raw capture from the antenna, taken while promiscuous mode is on. Unlike
+     * RadioPacket, this has no protocol structure - it's whatever bytes were
+     * physically on the air on the current channel, good or bad CRC alike.
+     */
+    export class RawAntennaPacket {
+        public static getPacket(data: Buffer) {
+            if (!data) return undefined;
+            return new RawAntennaPacket(data);
+        }
+
+        private constructor(public readonly data: Buffer) { }
+
+        // whole capture minus the trailing 4-byte RSSI (see readRawAntennaPacket in radio.cpp)
+        get bytes() {
+            return this.data.slice(0, this.data.length - 4);
+        }
+
+        get rssi() {
+            return this.data.getNumber(NumberFormat.Int32LE, this.data.length - 4);
+        }
+    }
+
+    /**
+     * Turns raw "monitor mode" on: the radio stops enforcing the micro:bit
+     * packet framing (address match, whitening, CRC), so rf.scanRaw() sees
+     * whatever is actually on the air on the current channel - like other radios'
+     * raw sniff/scan mode. Call rf.stopPromiscuousMode() to go back to normal.
+     */
+    //% help=rf/start-promiscuous-mode
+    //% blockId=rf_start_promiscuous_mode block="rf start raw antenna scan"
+    //% group="Receive"
+    //% weight=19
+    export function startPromiscuousMode() {
+        setPromiscuousMode(true);
+    }
+
+    /**
+     * Turns raw "monitor mode" back off and returns to normal micro:bit packet
+     * send/receive.
+     */
+    //% help=rf/stop-promiscuous-mode
+    //% blockId=rf_stop_promiscuous_mode block="rf stop raw antenna scan"
+    //% group="Receive"
+    //% weight=18
+    export function stopPromiscuousMode() {
+        setPromiscuousMode(false);
+    }
+
+    /**
+     * Reads whatever raw bytes were last captured off the antenna on the current
+     * channel, together with their signal strength - independent of protocol,
+     * exactly as other radio modules expose a raw receive. Only produces data
+     * while promiscuous mode is on (rf.startPromiscuousMode()).
+     * @returns undefined if promiscuous mode is off or nothing has been captured yet
+     */
+    //% help=rf/scan-raw
+    //% blockId=rf_scan_raw block="rf raw antenna packet"
+    //% group="Receive"
+    //% weight=17
+    export function scanRaw(): RawAntennaPacket {
+        const buffer = readRawAntennaPacket();
+        return RawAntennaPacket.getPacket(buffer);
     }
 }
