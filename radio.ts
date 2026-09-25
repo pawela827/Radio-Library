@@ -521,4 +521,25 @@ namespace rf {
     export function setRadioEsbAddress(address: Buffer) {
         setEsbAddress(address);
     }
+
+    /**
+     * Sends raw bytes on-air using the given protocol's framing - one function
+     * for every raw-capable protocol rather than a separate send function per
+     * protocol. Switches the radio to that protocol first if it isn't already
+     * on it (so you don't need to call rf.setRadioProtocol() separately), and
+     * leaves it in that protocol afterwards, still listening (rf.scanRaw()
+     * keeps working right after). What bytes to pass depends on the protocol:
+     * on RadioProtocol.Esb, `data` is the payload only (up to 32 bytes) - the
+     * [S0][S1] header is filled in as zero automatically. RadioProtocol.MakeCode
+     * isn't accepted here; use rf.sendNumber()/sendString()/etc for that.
+     * @param protocol which protocol to send with, eg: RadioProtocol.Esb
+     * @param data the bytes to transmit, up to 32 bytes
+     */
+    //% help=rf/send-raw
+    //% blockId=rf_send_raw block="rf send raw %protocol packet %data"
+    //% group="Send"
+    //% weight=21
+    export function sendRaw(protocol: RadioProtocol, data: Buffer) {
+        sendRawAntennaPacket(protocol, data);
+    }
 }
