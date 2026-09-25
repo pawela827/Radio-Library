@@ -10,6 +10,21 @@ enum RadioPacketProperty {
     SerialNumber = 1
 }
 
+enum RadioProtocol {
+    //% block="micro:bit"
+    MakeCode = 0,
+    //% block="raw"
+    Raw = 1,
+    //% block="ESB (nRF24L01)"
+    Esb = 2,
+    // reserved for later additions: Zigbee = 3, BLE = 4
+    //% block="Gazell"
+    // NOT YET FUNCTIONAL: needs Nordic's closed-source nrf_gzll library linked
+    // into this extension first - see the checklist above enterGazellProtocol()
+    // in radio.cpp. Selecting this currently does nothing (setProtocol ignores it).
+    Gazell = 5,
+}
+
 /**
  * Communicate data using radio packets
  */
@@ -409,9 +424,10 @@ namespace rf {
     }
 
     /**
-     * A raw capture from the antenna, taken while promiscuous mode is on. Unlike
-     * RadioPacket, this has no protocol structure - it's whatever bytes were
-     * physically on the air on the current channel, good or bad CRC alike.
+     * A raw capture from the antenna, taken while the radio is on a raw-capable
+     * protocol (eg. RadioProtocol.Raw). Unlike RadioPacket, this has no protocol
+     * structure - it's whatever bytes were physically on the air on the current
+     * channel, good or bad CRC alike.
      */
     export class RawAntennaPacket {
         public static getPacket(data: Buffer) {
@@ -421,7 +437,9 @@ namespace rf {
 
         private constructor(public readonly data: Buffer) { }
 
-        // whole capture minus the trailing 4-byte RSSI (see readRawAntennaPacket in radio.cpp)
+        // whole capture minus the trailing 4-byte RSSI (see readRawAntennaPacket in radio.cpp).
+        // On RadioProtocol.Raw this is the plain payload; on RadioProtocol.Esb it's
+        // [S0][S1][payload...] - use esbPayload/esbS0/esbS1 to split those apart.
         get bytes() {
             return this.data.slice(0, this.data.length - 4);
         }
@@ -429,40 +447,55 @@ namespace rf {
         get rssi() {
             return this.data.getNumber(NumberFormat.Int32LE, this.data.length - 4);
         }
+
+        // ESB's PCF byte 0 (S0) - unused in the legacy ShockBurst framing this uses
+        get esbS0() {
+            return this.data[0];
+        }
+
+        // ESB's PCF byte 1 (S1) - unused in the legacy ShockBurst framing this uses
+        get esbS1() {
+            return this.data[1];
+        }
+
+        // ESB payload, with the [S0][S1] header stripped off
+        get esbPayload() {
+            return this.data.slice(2, this.data.length - 4);
+        }
     }
 
     /**
-     * Turns raw "monitor mode" on: the radio stops enforcing the micro:bit
-     * packet framing (address match, whitening, CRC), so rf.scanRaw() sees
-     * whatever is actually on the air on the current channel - like other radios'
-     * raw sniff/scan mode. Call rf.stopPromiscuousMode() to go back to normal.
+     * Switches the radio to a different protocol. RadioProtocol.MakeCode is the
+     * normal mode (send/receive between micro:bits); the others reconfigure the
+     * same RADIO peripheral to speak a different framing - see RadioProtocol.
+     * @param protocol the protocol to switch to, eg: RadioProtocol.MakeCode
      */
-    //% help=rf/start-promiscuous-mode
-    //% blockId=rf_start_promiscuous_mode block="rf start raw antenna scan"
+    //% help=rf/set-protocol
+    //% blockId=rf_set_protocol_ block="rf set protocol %protocol"
+    //% group="Receive"
+    //% weight=20
+    export function setRadioProtocol(protocol: RadioProtocol) {
+        setProtocol(protocol);
+    }
+
+    /**
+     * Which protocol the radio is currently using.
+     */
+    //% help=rf/get-protocol
+    //% blockId=rf_get_protocol_ block="rf protocol"
     //% group="Receive"
     //% weight=19
-    export function startPromiscuousMode() {
-        setPromiscuousMode(true);
-    }
-
-    /**
-     * Turns raw "monitor mode" back off and returns to normal micro:bit packet
-     * send/receive.
-     */
-    //% help=rf/stop-promiscuous-mode
-    //% blockId=rf_stop_promiscuous_mode block="rf stop raw antenna scan"
-    //% group="Receive"
-    //% weight=18
-    export function stopPromiscuousMode() {
-        setPromiscuousMode(false);
+    export function getRadioProtocol(): RadioProtocol {
+        return getProtocol();
     }
 
     /**
      * Reads whatever raw bytes were last captured off the antenna on the current
      * channel, together with their signal strength - independent of protocol,
      * exactly as other radio modules expose a raw receive. Only produces data
-     * while promiscuous mode is on (rf.startPromiscuousMode()).
-     * @returns undefined if promiscuous mode is off or nothing has been captured yet
+     * while on a raw-capable protocol (rf.setRadioProtocol(RadioProtocol.Raw)
+     * or RadioProtocol.Esb).
+     * @returns undefined if not on a raw-capable protocol or nothing captured yet
      */
     //% help=rf/scan-raw
     //% blockId=rf_scan_raw block="rf raw antenna packet"
@@ -471,5 +504,21 @@ namespace rf {
     export function scanRaw(): RawAntennaPacket {
         const buffer = readRawAntennaPacket();
         return RawAntennaPacket.getPacket(buffer);
+    }
+
+    /**
+     * Sets the 5-byte on-air address used by RadioProtocol.Esb - the same role
+     * as the address configured on an nRF24L01(+) module (eg. the common
+     * default 0xE7E7E7E7E7 used by many Arduino RF24 libraries). Only takes
+     * effect on ESB; switch to RadioProtocol.Esb first, or call this again
+     * after switching to it if you need a non-default address.
+     * @param address exactly 5 bytes
+     */
+    //% help=rf/set-esb-address
+    //% blockId=rf_set_esb_address_ block="rf set esb address %address"
+    //% group="Receive"
+    //% weight=16
+    export function setRadioEsbAddress(address: Buffer) {
+        setEsbAddress(address);
     }
 }
