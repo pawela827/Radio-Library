@@ -90,6 +90,25 @@ namespace pxsim.rf {
             state.setEsbAddress(buf.data);
     }
 
+    export function sendRawAntennaPacket(protocol: number, buf: RefBuffer) {
+        const state = pxsim.getRadioState();
+        if (!state.enable || !buf) return;
+        if (protocol === pxsim.RADIO_PROTOCOL_MAKECODE || protocol === pxsim.RADIO_PROTOCOL_GAZELL) return;
+
+        if (protocol !== state.protocol)
+            state.setProtocol(protocol);
+        if (protocol !== state.protocol) return; // rejected (unknown/unavailable)
+
+        // broadcast like a real raw-capable protocol would: no groupId
+        // filtering, picked up by anything else in promiscuous/Esb mode -
+        // see RadioState.receivePacket()'s promiscuousDatagram branch
+        state.promiscuousDatagram.send({
+            type: -1,
+            groupId: state.groupId,
+            bufferData: buf.data
+        });
+    }
+
     export function off(){
         const state = pxsim.getRadioState();
         state.off();
