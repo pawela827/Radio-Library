@@ -107,7 +107,7 @@ CODAL_RADIO* getRadio() {
     * Disables the radio for use as a multipoint sender/receiver.
     * Disabling radio will help conserve battery power when it is not in use.
     */
-    //% help=radio/off
+    //% help=rf/off
     void off() {
 #ifdef CODAL_RADIO
         auto radio = getRadio();
@@ -129,7 +129,7 @@ CODAL_RADIO* getRadio() {
     * Initialises the radio for use as a multipoint sender/receiver
     * Only useful when the radio.off() is used beforehand.
     */
-    //% help=radio/on
+    //% help=rf/on
     void on() {
 #ifdef CODAL_RADIO
         auto radio = getRadio();
@@ -150,12 +150,12 @@ CODAL_RADIO* getRadio() {
     /**
     * Sends an event over radio to neigboring devices
     */
-    //% blockId=radioRaiseEvent block="radio raise event|from source %src=control_event_source_id|with value %value=control_event_value_id"
+    //% blockId=rfRaiseEvent block="rf raise event|from source %src=control_event_source_id|with value %value=control_event_value_id"
     //% src.label="source" value.label="value"
     //% blockExternalInputs=1
     //% advanced=true
     //% weight=1
-    //% help=radio/raise-event
+    //% help=rf/raise-event
     void raiseEvent(int src, int value) {
 #ifdef CODAL_RADIO        
         if (radioEnable() != DEVICE_OK) return;
@@ -217,9 +217,9 @@ CODAL_RADIO* getRadio() {
     /**
      * Used internally by the library.
      */
-    //% help=radio/on-data-received
+    //% help=rf/on-data-received
     //% weight=0
-    //% blockId=radio_datagram_received_event block="radio on data received" blockGap=8
+    //% blockId=rf_datagram_received_event block="rf on data received" blockGap=8
     //% deprecated=true blockHidden=1
     void onDataReceived(Action body) {
 #ifdef CODAL_RADIO        
@@ -234,9 +234,9 @@ CODAL_RADIO* getRadio() {
      * Sets the group id for radio communications. A micro:bit can only listen to one group ID at any time.
      * @param id the group id between ``0`` and ``255``, eg: 1
      */
-    //% help=radio/set-group
+    //% help=rf/set-group
     //% weight=100
-    //% blockId=radio_set_group block="radio set group %ID"
+    //% blockId=rf_set_group block="rf set group %ID"
     //% id.label="value"
     //% id.min=0 id.max=255
     //% group="Group"
@@ -252,9 +252,9 @@ CODAL_RADIO* getRadio() {
      * Change the output power level of the transmitter to the given value.
     * @param power a value in the range 0..7, where 0 is the lowest power and 7 is the highest. eg: 7
     */
-    //% help=radio/set-transmit-power
+    //% help=rf/set-transmit-power
     //% weight=9 blockGap=8
-    //% blockId=radio_set_transmit_power block="radio set transmit power %power"
+    //% blockId=rf_set_transmit_power block="rf set transmit power %power"
     //% power.label="value"
     //% power.min=0 power.max=7
     //% advanced=true
@@ -277,7 +277,7 @@ CODAL_RADIO* getRadio() {
     // values; rf.scanRaw()/readRawAntennaPacket() and rf.sendRawPacket() don't
     // need to change, since they just move bytes in and out of rawRxBuf either way.
 
-    // keep in sync with RadioProtocol in radio.ts/shims.d.ts
+    // keep in sync with RFProtocol in radio.ts/shims.d.ts
     const int PROTOCOL_MAKECODE = 0; // normal micro:bit packets (MicroBitRadio/NRF52Radio defaults)
     const int PROTOCOL_RAW = 1;      // promiscuous: no address match, no CRC, no whitening
     const int PROTOCOL_ESB = 2;      // Nordic (Enhanced) ShockBurst - compatible with nRF24L01(+)
@@ -336,13 +336,13 @@ CODAL_RADIO* getRadio() {
     /**
      * Sets the 5-byte on-air address ESB listens to and sends with - the same
      * role as the address configured on an nRF24L01(+) module. Only takes
-     * effect while rf.setProtocol(RadioProtocol.Esb) is active; call it again
+     * effect while rf.setProtocol(RFProtocol.Esb) is active; call it again
      * after switching protocol if you need a non-default address.
      * @param address exactly 5 bytes, eg: hex literal like E7E7E7E7E7
      */
-    //% help=radio/set-esb-address
+    //% help=rf/set-esb-address
     //% weight=5 blockGap=8
-    //% blockId=radio_set_esb_address block="rf set esb address %address"
+    //% blockId=rf_set_esb_address block="rf set esb address %address"
     //% advanced=true
     void setEsbAddress(Buffer address) {
         if (NULL == address || address->length != 5) return;
@@ -487,11 +487,11 @@ CODAL_RADIO* getRadio() {
      * RADIO peripheral - switching is instant and doesn't need re-flashing.
      * rf.setFrequencyBand() and rf.setGroup()/setTransmitPower() keep working
      * the same way regardless of which protocol is active.
-     * @param protocol which protocol to switch to, eg: RadioProtocol.MakeCode
+     * @param protocol which protocol to switch to, eg: RFProtocol.MakeCode
      */
-    //% help=radio/set-protocol
+    //% help=rf/set-protocol
     //% weight=7 blockGap=8
-    //% blockId=radio_set_protocol block="rf set protocol %protocol"
+    //% blockId=rf_set_protocol block="rf set protocol %protocol"
     //% advanced=true
     void setProtocol(int protocol) {
         if (radioEnable() != DEVICE_OK) return;
@@ -539,7 +539,7 @@ CODAL_RADIO* getRadio() {
     /**
      * Which protocol the radio is currently using.
      */
-    //% help=radio/get-protocol
+    //% help=rf/get-protocol
     //% weight=6 blockGap=8
     //% advanced=true
     int getProtocol() {
@@ -553,9 +553,9 @@ CODAL_RADIO* getRadio() {
      * does not require a particular protocol and does not decode anything.
      * @returns signal strength in dBm (negative; closer to 0 = stronger), or 0 if unavailable
      */
-    //% help=radio/scan-rssi
+    //% help=rf/scan-rssi
     //% weight=10 blockGap=8
-    //% blockId=radio_scan_rssi block="rf scan rssi"
+    //% blockId=rf_scan_rssi block="rf scan rssi"
     //% advanced=true
     int scanRSSI() {
         if (radioEnable() != DEVICE_OK) return 0;
@@ -618,19 +618,19 @@ CODAL_RADIO* getRadio() {
      * only differ in which registers setProtocol() already configured (this
      * keeps extra flash usage down, which matters on a 512KB part). Switches
      * to that protocol first if the radio isn't already on it (same one-call
-     * convenience as rf.setRadioProtocol() + rf.scanRaw(), but in one step).
+     * convenience as rf.setRFProtocol() + rf.scanRaw(), but in one step).
      * The exact bytes expected depend on the protocol:
      *  - Raw: up to 32 bytes, sent exactly as given (no header)
      *  - Esb: up to 32 bytes; passed through as the payload, with the [S0][S1]
      *    header bytes rf.scanRaw() exposes as esbS0/esbS1 both set to 0
      * MakeCode isn't accepted here - use rf.sendNumber()/sendString()/etc
      * instead, which speak the normal micro:bit packet format.
-     * @param protocol which protocol to send with, eg: RadioProtocol.Esb
+     * @param protocol which protocol to send with, eg: RFProtocol.Esb
      * @param data the bytes to transmit
      */
-    //% help=radio/send-raw-antenna-packet
+    //% help=rf/send-raw-antenna-packet
     //% weight=4 blockGap=8
-    //% blockId=radio_send_raw_antenna_packet block="rf send raw %protocol packet %data"
+    //% blockId=rf_send_raw_antenna_packet block="rf send raw %protocol packet %data"
     //% advanced=true
     void sendRawAntennaPacket(int protocol, Buffer data) {
         if (protocol == PROTOCOL_MAKECODE || protocol == PROTOCOL_GAZELL) return;
@@ -679,9 +679,9 @@ CODAL_RADIO* getRadio() {
     * band 0-99 selects MAP=Low (2360-2459MHz), band 100-140 selects MAP=Default (2460-2500MHz).
     * @param band a frequency band in the range 0 - 140. Each step is 1MHz wide, based at 2360MHz.
     **/
-    //% help=radio/set-frequency-band
+    //% help=rf/set-frequency-band
     //% weight=8 blockGap=8
-    //% blockId=radio_set_frequency_band block="radio set frequency band %band"
+    //% blockId=rf_set_frequency_band block="rf set frequency band %band"
     //% band.label="value"
     //% band.min=0 band.max=140
     //% advanced=true
