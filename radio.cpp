@@ -608,6 +608,68 @@ CODAL_RADIO* getRadio() {
 
         return mkBuffer(buf, length + sizeof(int));
     }
+
+    uint8_t rawTxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2]; // same layout as rawRxBuf - see currentCaptureLength()
+
+    /**
+     * Sends raw bytes on-air using the given protocol's framing - one function
+     * for every raw-capable protocol instead of a separate send function per
+     * protocol, since they all share the same TXEN/PACKETPTR/END sequence and
+     * only differ in which registers setProtocol() already configured (this
+     * keeps extra flash usage down, which matters on a 512KB part). Switches
+     * to that protocol first if the radio isn't already on it (same one-call
+     * convenience as rf.setRadioProtocol() + rf.scanRaw(), but in one step).
+     * The exact bytes expected depend on the protocol:
+     *  - Raw: up to 32 bytes, sent exactly as given (no header)
+     *  - Esb: up to 32 bytes; passed through as the payload, with the [S0][S1]
+     *    header bytes rf.scanRaw() exposes as esbS0/esbS1 both set to 0
+     * MakeCode isn't accepted here - use rf.sendNumber()/sendString()/etc
+     * instead, which speak the normal micro:bit packet format.
+     * @param protocol which protocol to send with, eg: RadioProtocol.Esb
+     * @param data the bytes to transmit
+     */
+    //% help=radio/send-raw-antenna-packet
+    //% weight=4 blockGap=8
+    //% blockId=radio_send_raw_antenna_packet block="rf send raw %protocol packet %data"
+    //% advanced=true
+    void sendRawAntennaPacket(int protocol, Buffer data) {
+        if (protocol == PROTOCOL_MAKECODE || protocol == PROTOCOL_GAZELL) return;
+        if (NULL == data || data->length == 0) return;
+
+        if (protocol != currentProtocol)
+            setProtocol(protocol);
+        if (protocol != currentProtocol) return; // setProtocol rejected it (eg. unknown/unavailable)
+
+        int length = currentCaptureLength();
+        int headerLen = length - DEVICE_RADIO_MAX_PACKET_SIZE; // 0 for Raw, 2 for Esb ([S0][S1])
+        int payloadLen = data->length;
+        if (payloadLen > DEVICE_RADIO_MAX_PACKET_SIZE) payloadLen = DEVICE_RADIO_MAX_PACKET_SIZE;
+
+        memset(rawTxBuf, 0, sizeof(rawTxBuf));
+        memcpy(rawTxBuf + headerLen, data->data, payloadLen); // S0/S1 (if any) stay 0
+
+        // radio is currently RX-armed (setProtocol/enter*Protocol left it
+        // listening) - stop, send, then re-arm for RX so scanRaw() keeps working
+        NRF_RADIO->TASKS_DISABLE = 1;
+        while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+        NRF_RADIO->EVENTS_DISABLED = 0;
+
+        NRF_RADIO->PACKETPTR = (uint32_t)rawTxBuf;
+        NRF_RADIO->EVENTS_END = 0;
+        NRF_RADIO->TASKS_TXEN = 1;
+        while (NRF_RADIO->EVENTS_READY == 0) {}
+        NRF_RADIO->EVENTS_READY = 0;
+        NRF_RADIO->TASKS_START = 1;
+        while (NRF_RADIO->EVENTS_END == 0) {}
+        NRF_RADIO->EVENTS_END = 0;
+
+        // back to RX so rf.scanRaw()/readRawAntennaPacket() keep receiving
+        NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+        NRF_RADIO->TASKS_RXEN = 1;
+        while (NRF_RADIO->EVENTS_READY == 0) {}
+        NRF_RADIO->EVENTS_READY = 0;
+        NRF_RADIO->TASKS_START = 1;
+    }
 #endif // NRF52_SERIES && !DAL
 
     /**
@@ -654,4 +716,4 @@ CODAL_RADIO* getRadio() {
 #endif
 #endif
     }
-}.
+}
