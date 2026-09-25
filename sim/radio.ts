@@ -53,14 +53,14 @@ namespace pxsim.rf {
         state.datagram.onReceived(handler);
     }
 
-    export function setPromiscuousMode(enabled: boolean): void {
+    export function setProtocol(protocol: number): void {
         const state = pxsim.getRadioState();
-        state.setPromiscuousMode(enabled);
+        state.setProtocol(protocol);
     }
 
-    export function isPromiscuousMode(): boolean {
+    export function getProtocol(): number {
         const state = pxsim.getRadioState();
-        return state.promiscuous;
+        return state.protocol;
     }
 
     export function scanRSSI(): number {
@@ -82,6 +82,12 @@ namespace pxsim.rf {
         // append RSSI
         BufferMethods.setNumber(rbuf, BufferMethods.NumberFormat.Int32LE, n, packet.rssi)
         return rbuf;
+    }
+
+    export function setEsbAddress(buf: RefBuffer): void {
+        const state = pxsim.getRadioState();
+        if (buf && buf.data && buf.data.length === 5)
+            state.setEsbAddress(buf.data);
     }
 
     export function off(){
