@@ -1,10 +1,10 @@
 namespace pxsim {
-    export interface RadioBoard extends EventBusBoard {
-        radioState: RadioState;
+    export interface RFBoard extends EventBusBoard {
+        rfState: RFState;
     }
 
-    export function getRadioState() {
-        return (board() as any as RadioBoard).radioState;
+    export function getRFState() {
+        return (board() as any as RFBoard).rfState;
     }
 
     export interface PacketBuffer {
@@ -19,18 +19,18 @@ namespace pxsim {
         bufferData?: Uint8Array;
     }
 
-    export interface RadioDAL {
+    export interface RFDAL {
         ID_RADIO: number;
         RADIO_EVT_DATAGRAM: number;
     }
 
-    export class RadioDatagram {
+    export class RFDatagram {
         datagram: PacketBuffer[] = [];
-        lastReceived: PacketBuffer = RadioDatagram.defaultPacket();
+        lastReceived: PacketBuffer = RFDatagram.defaultPacket();
         // this value is unset until the user decide to set the RSSI via the simulator UI
         private _rssi: number;
 
-        constructor(private runtime: Runtime, public dal: RadioDAL) {
+        constructor(private runtime: Runtime, public dal: RFDAL) {
             this._rssi = undefined; // not set yet
         }
 
@@ -49,7 +49,7 @@ namespace pxsim {
         }
 
         send(payload: SimulatorRadioPacketPayload) {
-            const state = getRadioState();
+            const state = getRFState();
             Runtime.postMessage(<SimulatorRadioPacketMessage>{
                 type: "radiopacket",
                 broadcast: true,
@@ -62,7 +62,7 @@ namespace pxsim {
 
         recv(): PacketBuffer {
             let r = this.datagram.shift();
-            if (!r) r = RadioDatagram.defaultPacket();
+            if (!r) r = RFDatagram.defaultPacket();
             return this.lastReceived = r;
         }
 
@@ -81,22 +81,22 @@ namespace pxsim {
         }
     }
 
-    // keep in sync with RadioProtocol in radio.ts/shims.d.ts
-    export const RADIO_PROTOCOL_MAKECODE = 0;
-    export const RADIO_PROTOCOL_RAW = 1;
-    export const RADIO_PROTOCOL_ESB = 2;
-    export const RADIO_PROTOCOL_GAZELL = 5; // not functional yet - see radio.cpp
+    // keep in sync with RFProtocol in radio.ts/shims.d.ts
+    export const RF_PROTOCOL_MAKECODE = 0;
+    export const RF_PROTOCOL_RAW = 1;
+    export const RF_PROTOCOL_ESB = 2;
+    export const RF_PROTOCOL_GAZELL = 5; // not functional yet - see radio.cpp
     // reserved for later: Zigbee = 3, BLE = 4
 
-    export class RadioState {
+    export class RFState {
         power = 0;
         transmitSerialNumber = false;
-        datagram: RadioDatagram;
+        datagram: RFDatagram;
         // raw antenna capture queue: fed by every packet seen on air, regardless
         // of groupId - the sim's analog of a raw protocol not filtering by
         // address match. Only used while `protocol` is RAW or ESB.
-        promiscuousDatagram: RadioDatagram;
-        protocol = RADIO_PROTOCOL_MAKECODE;
+        promiscuousDatagram: RFDatagram;
+        protocol = RF_PROTOCOL_MAKECODE;
         // the simulator has no real nRF24L01 to talk to, so this is only kept
         // for rf.getEsbAddress()-style introspection / consistency with radio.cpp
         esbAddress: number[] = [0xE7, 0xE7, 0xE7, 0xE7, 0xE7];
@@ -104,9 +104,9 @@ namespace pxsim {
         band: number;
         enable: boolean;
 
-        constructor(private readonly runtime: Runtime, private readonly board: BaseBoard, dal: RadioDAL) {
-            this.datagram = new RadioDatagram(runtime, dal);
-            this.promiscuousDatagram = new RadioDatagram(runtime, dal);
+        constructor(private readonly runtime: Runtime, private readonly board: BaseBoard, dal: RFDAL) {
+            this.datagram = new RFDatagram(runtime, dal);
+            this.promiscuousDatagram = new RFDatagram(runtime, dal);
             this.power = 6; // default value
             this.groupId = 0;
             this.band = 7; // https://github.com/lancaster-university/microbit-dal/blob/master/inc/core/MicroBitConfig.h#L320
@@ -162,9 +162,9 @@ namespace pxsim {
             if (this.enable) {
                 // unknown protocol - ignore the request, stay on the current one
                 // (mirrors radio.cpp's default: case in setProtocol's switch)
-                if (protocol !== RADIO_PROTOCOL_MAKECODE
-                    && protocol !== RADIO_PROTOCOL_RAW
-                    && protocol !== RADIO_PROTOCOL_ESB) return;
+                if (protocol !== RF_PROTOCOL_MAKECODE
+                    && protocol !== RF_PROTOCOL_RAW
+                    && protocol !== RF_PROTOCOL_ESB) return;
                 this.protocol = protocol;
             }
         }
@@ -208,7 +208,7 @@ namespace pxsim {
                 // (The simulator can't talk to a real nRF24L01, so Esb here is
                 // only a stand-in for testing rf.scanRaw()/esbPayload logic,
                 // not a real ShockBurst address/CRC filter.)
-                if (this.protocol === RADIO_PROTOCOL_RAW || this.protocol === RADIO_PROTOCOL_ESB) {
+                if (this.protocol === RF_PROTOCOL_RAW || this.protocol === RF_PROTOCOL_ESB) {
                     this.promiscuousDatagram.queue(packet)
                 }
             }
