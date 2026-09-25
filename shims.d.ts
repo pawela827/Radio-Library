@@ -89,33 +89,33 @@ declare namespace rf {
     function setFrequencyBand(band: int32): void;
 
     /**
-     * Turns raw "monitor mode" on or off. While on, the radio stops enforcing
-     * the micro:bit packet framing (address match, whitening, CRC) so
-     * rf.readRawAntennaPacket() can see whatever is actually on the air on the
-     * current channel - not just valid micro:bit packets. Normal rf.on()/send()/
-     * receive still work as before once this is turned back off.
-     * @param enabled true to start sniffing raw bytes, false to return to normal mode
+     * Switches the radio to a different protocol/framing. Each protocol is a
+     * different combination of address matching, CRC and whitening on the same
+     * RADIO peripheral - switching is instant and doesn't need re-flashing.
+     * rf.setFrequencyBand() and rf.setGroup()/setTransmitPower() keep working
+     * the same way regardless of which protocol is active.
+     * @param protocol which protocol to switch to, eg: RadioProtocol.MakeCode
      */
-    //% help=rf/set-promiscuous-mode
+    //% help=rf/set-protocol
     //% weight=7 blockGap=8
-    //% blockId=rf_set_promiscuous_mode block="rf set promiscuous mode %enabled"
-    //% advanced=true shim=rf::setPromiscuousMode
-    function setPromiscuousMode(enabled: boolean): void;
+    //% blockId=rf_set_protocol block="rf set protocol %protocol"
+    //% advanced=true shim=rf::setProtocol
+    function setProtocol(protocol: int32): void;
 
     /**
-     * Whether raw promiscuous/monitor mode is currently on.
+     * Which protocol the radio is currently using.
      */
-    //% help=rf/is-promiscuous-mode
+    //% help=rf/get-protocol
     //% weight=6 blockGap=8
-    //% blockId=rf_is_promiscuous_mode block="rf promiscuous mode on"
-    //% advanced=true shim=rf::isPromiscuousMode
-    function isPromiscuousMode(): boolean;
+    //% blockId=rf_get_protocol block="rf protocol"
+    //% advanced=true shim=rf::getProtocol
+    function getProtocol(): int32;
 
     /**
      * Measures the current energy on the antenna at the active channel, in dBm,
      * independently of whether any recognisable packet is present. This is the
      * same "spectrum scanner" style reading other 2.4GHz radios expose - it
-     * does not require promiscuous mode and does not decode anything.
+     * does not require a particular protocol and does not decode anything.
      * @returns signal strength in dBm (negative; closer to 0 = stronger), or 0 if unavailable
      */
     //% help=rf/scan-rssi
@@ -125,14 +125,26 @@ declare namespace rf {
     function scanRSSI(): int32;
 
     /**
-     * Internal use only. While promiscuous mode is on, returns whatever raw
-     * bytes were last captured off the air on the current channel, together
-     * with their RSSI - regardless of whether they form a valid micro:bit
-     * packet. Call rf.setPromiscuousMode(true) first.
-     * @returns NULL if promiscuous mode is off or nothing has been captured yet
+     * Internal use only. While the radio is on a raw-capable protocol (eg.
+     * RadioProtocol.Raw or RadioProtocol.Esb), returns whatever bytes were
+     * last captured off the air on the current channel using that protocol's
+     * framing, together with their RSSI.
+     * @returns NULL if not on a raw-capable protocol or nothing captured yet
      */
     //% shim=rf::readRawAntennaPacket
     function readRawAntennaPacket(): Buffer;
+
+    /**
+     * Sets the 5-byte on-air address used by RadioProtocol.Esb - the same role
+     * as the address configured on an nRF24L01(+) module. Only takes effect
+     * while ESB is the active protocol.
+     * @param address exactly 5 bytes
+     */
+    //% help=rf/set-esb-address
+    //% weight=5 blockGap=8
+    //% blockId=rf_set_esb_address block="rf set esb address %address"
+    //% advanced=true shim=rf::setEsbAddress
+    function setEsbAddress(address: Buffer): void;
 }
 
 // Auto-generated. Do not edit. Really.
