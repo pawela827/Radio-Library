@@ -145,6 +145,19 @@ declare namespace rf {
     //% blockId=rf_set_esb_address block="rf set esb address %address"
     //% advanced=true shim=rf::setEsbAddress
     function setEsbAddress(address: Buffer): void;
+
+    /**
+     * Sends raw bytes on-air using the given protocol's framing. Switches to
+     * that protocol first if the radio isn't already on it. RadioProtocol.MakeCode
+     * isn't accepted here - use radio.sendNumber()/sendString()/etc instead.
+     * @param protocol which protocol to send with (see RadioProtocol)
+     * @param data the bytes to transmit, up to 32 bytes
+     */
+    //% help=rf/send-raw-antenna-packet
+    //% weight=4 blockGap=8
+    //% blockId=rf_send_raw_antenna_packet block="rf send raw %protocol packet %data"
+    //% advanced=true shim=rf::sendRawAntennaPacket
+    function sendRawAntennaPacket(protocol: int32, data: Buffer): void;
 }
 
 // Auto-generated. Do not edit. Really.
