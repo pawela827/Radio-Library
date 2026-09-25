@@ -78,15 +78,61 @@ declare namespace rf {
 
     /**
      * Change the transmission and reception band of the radio to the given channel
-     * @param band a frequency band in the range 0 - 83. Each step is 1MHz wide, based at 2400MHz.
+     * @param band a frequency band in the range 0 - 140. Each step is 1MHz wide, based at 2360MHz.
      **/
     //% help=rf/set-frequency-band
     //% weight=8 blockGap=8
     //% blockId=rf_set_frequency_band block="rf set frequency band %band"
     //% band.label="value"
-    //% band.min=0 band.max=83
+    //% band.min=0 band.max=140
     //% advanced=true shim=rf::setFrequencyBand
     function setFrequencyBand(band: int32): void;
+
+    /**
+     * Turns raw "monitor mode" on or off. While on, the radio stops enforcing
+     * the micro:bit packet framing (address match, whitening, CRC) so
+     * rf.readRawAntennaPacket() can see whatever is actually on the air on the
+     * current channel - not just valid micro:bit packets. Normal rf.on()/send()/
+     * receive still work as before once this is turned back off.
+     * @param enabled true to start sniffing raw bytes, false to return to normal mode
+     */
+    //% help=rf/set-promiscuous-mode
+    //% weight=7 blockGap=8
+    //% blockId=rf_set_promiscuous_mode block="rf set promiscuous mode %enabled"
+    //% advanced=true shim=rf::setPromiscuousMode
+    function setPromiscuousMode(enabled: boolean): void;
+
+    /**
+     * Whether raw promiscuous/monitor mode is currently on.
+     */
+    //% help=rf/is-promiscuous-mode
+    //% weight=6 blockGap=8
+    //% blockId=rf_is_promiscuous_mode block="rf promiscuous mode on"
+    //% advanced=true shim=rf::isPromiscuousMode
+    function isPromiscuousMode(): boolean;
+
+    /**
+     * Measures the current energy on the antenna at the active channel, in dBm,
+     * independently of whether any recognisable packet is present. This is the
+     * same "spectrum scanner" style reading other 2.4GHz radios expose - it
+     * does not require promiscuous mode and does not decode anything.
+     * @returns signal strength in dBm (negative; closer to 0 = stronger), or 0 if unavailable
+     */
+    //% help=rf/scan-rssi
+    //% weight=10 blockGap=8
+    //% blockId=rf_scan_rssi block="rf scan rssi"
+    //% advanced=true shim=rf::scanRSSI
+    function scanRSSI(): int32;
+
+    /**
+     * Internal use only. While promiscuous mode is on, returns whatever raw
+     * bytes were last captured off the air on the current channel, together
+     * with their RSSI - regardless of whether they form a valid micro:bit
+     * packet. Call rf.setPromiscuousMode(true) first.
+     * @returns NULL if promiscuous mode is off or nothing has been captured yet
+     */
+    //% shim=rf::readRawAntennaPacket
+    function readRawAntennaPacket(): Buffer;
 }
 
 // Auto-generated. Do not edit. Really.
