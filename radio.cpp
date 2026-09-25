@@ -267,100 +267,290 @@ CODAL_RADIO* getRadio() {
     }
 
 #if defined(NRF52_SERIES) && !CODAL_RADIO_MICROBIT_DAL
-    // ---------- raw antenna access (V2 / nRF52833 only) ----------
+    // ---------- protocol-level raw antenna access (V2 / nRF52833 only) ----------
     // Everything below talks to the RADIO peripheral directly, bypassing the
     // MicroBitRadio/NRF52Radio protocol layer entirely (its fixed BASE0="uBit"
-    // address match, CRC and whitening). This is how a real "raw scan" has to
-    // work: the protocol layer only ever hands back bytes that already passed
-    // its own framing, so anything off-protocol never reaches it as data.
+    // address match, CRC and whitening). A "protocol" here is just a name for
+    // one particular combination of CRCCNF/PCNF0/PCNF1/DATAWHITEIV/MODE - the
+    // registers that decide what counts as a valid packet on the air. Adding a
+    // new protocol later means adding one more case below with its own register
+    // values; rf.scanRaw()/readRawAntennaPacket() and rf.sendRawPacket() don't
+    // need to change, since they just move bytes in and out of rawRxBuf either way.
 
-    bool promiscuous = false;
+    // keep in sync with RadioProtocol in radio.ts/shims.d.ts
+    const int PROTOCOL_MAKECODE = 0; // normal micro:bit packets (MicroBitRadio/NRF52Radio defaults)
+    const int PROTOCOL_RAW = 1;      // promiscuous: no address match, no CRC, no whitening
+    const int PROTOCOL_ESB = 2;      // Nordic (Enhanced) ShockBurst - compatible with nRF24L01(+)
+    const int PROTOCOL_GAZELL = 5;   // Nordic Gazell - see the NRF_GZLL_AVAILABLE block below
+    // reserved for later: PROTOCOL_ZIGBEE = 3, PROTOCOL_BLE = 4
 
-    // registers saved before entering promiscuous mode, so normal rf.on()/
-    // send()/recv() keeps working correctly once promiscuous mode is turned off
-    uint32_t savedCRCCNF, savedPCNF0, savedPCNF1, savedDATAWHITEIV, savedSHORTS;
-    uint8_t rawRxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2]; // +2: raw packets carry their own length byte(s)
+    int currentProtocol = PROTOCOL_MAKECODE;
+
+    // registers saved before leaving PROTOCOL_MAKECODE, so switching back
+    // restores normal rf.on()/send()/recv() behaviour exactly as it was
+    uint32_t savedCRCCNF, savedPCNF0, savedPCNF1, savedDATAWHITEIV, savedSHORTS, savedMODE;
+    bool savedRegistersValid = false;
+    // +2: large enough for ESB's [S0][S1][payload...] layout as well as
+    // PROTOCOL_RAW's plain [payload...] layout - see currentCaptureLength()
+    uint8_t rawRxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2];
+
+    // how many bytes of rawRxBuf actually hold real data for the active
+    // protocol - PROTOCOL_RAW has no header (PCNF0=0), PROTOCOL_ESB has a
+    // 2-byte [S0][S1] header in front of the payload (see enterEsbProtocol)
+    int currentCaptureLength() {
+        switch (currentProtocol) {
+            case PROTOCOL_ESB: return DEVICE_RADIO_MAX_PACKET_SIZE + 2;
+            default: return DEVICE_RADIO_MAX_PACKET_SIZE;
+        }
+    }
+
+    // ---------- ESB (Enhanced ShockBurst / nRF24L01-compatible) ----------
+    // Register values below follow Nordic's own reference implementation
+    // (nrf51-micro-esb), using the legacy ShockBurst framing: static 32-byte
+    // payload, no dynamic-payload-length byte, big-endian on air, 2-byte CRC
+    // with the same CRCINIT/CRCPOLY as Bluetooth's default CRC-16. This is the
+    // framing nRF24L01(+) modules and most cheap ShockBurst peripherals
+    // (mice, remotes, toys) actually speak, and is simpler than the newer
+    // dynamic-payload-length (ESB_DPL) variant.
+    uint8_t esbAddress[5] = { 0xE7, 0xE7, 0xE7, 0xE7, 0xE7 }; // common default, eg. many RF24 libraries
+
+    // ShockBurst addresses are transmitted MSB-first per byte, but the RADIO
+    // peripheral's BASE/PREFIX registers store them bit-reversed per byte -
+    // same helper as Nordic's own esb library (bytewise_bit_swap)
+    uint32_t esbBitSwap(uint32_t inp) {
+        inp = (inp & 0xF0F0F0F0) >> 4 | (inp & 0x0F0F0F0F) << 4;
+        inp = (inp & 0xCCCCCCCC) >> 2 | (inp & 0x33333333) << 2;
+        inp = (inp & 0xAAAAAAAA) >> 1 | (inp & 0x55555555) << 1;
+        return inp;
+    }
+
+    void applyEsbAddress() {
+        // PREFIX0 holds the address's first (most significant) byte,
+        // BASE0 holds the remaining 4 bytes - both bit-reversed per byte
+        NRF_RADIO->PREFIX0 = esbBitSwap((uint32_t)esbAddress[0]);
+        NRF_RADIO->BASE0 = esbBitSwap(
+            ((uint32_t)esbAddress[1] << 24) | ((uint32_t)esbAddress[2] << 16) |
+            ((uint32_t)esbAddress[3] << 8) | (uint32_t)esbAddress[4]);
+    }
 
     /**
-     * Turns raw "monitor mode" on or off. While on, the radio stops enforcing
-     * the micro:bit packet framing (address match, whitening, CRC) so
-     * rf.readRawAntennaPacket() can see whatever is actually on the air on the
-     * current channel - not just valid micro:bit packets. Normal rf.on()/send()/
-     * receive still work as before once this is turned back off.
-     * @param enabled true to start sniffing raw bytes, false to return to normal mode
+     * Sets the 5-byte on-air address ESB listens to and sends with - the same
+     * role as the address configured on an nRF24L01(+) module. Only takes
+     * effect while rf.setProtocol(RadioProtocol.Esb) is active; call it again
+     * after switching protocol if you need a non-default address.
+     * @param address exactly 5 bytes, eg: hex literal like E7E7E7E7E7
      */
-    //% help=radio/set-promiscuous-mode
-    //% weight=7 blockGap=8
-    //% blockId=radio_set_promiscuous_mode block="rf set promiscuous mode %enabled"
+    //% help=radio/set-esb-address
+    //% weight=5 blockGap=8
+    //% blockId=radio_set_esb_address block="rf set esb address %address"
     //% advanced=true
-    void setPromiscuousMode(bool enabled) {
-        if (radioEnable() != DEVICE_OK) return;
-        if (enabled == promiscuous) return;
+    void setEsbAddress(Buffer address) {
+        if (NULL == address || address->length != 5) return;
+        for (int i = 0; i < 5; i++)
+            esbAddress[i] = address->data[i];
+        if (currentProtocol == PROTOCOL_ESB)
+            applyEsbAddress();
+    }
 
-        if (enabled) {
-            // save what MicroBitRadio/NRF52Radio configured, so we can restore it
-            savedCRCCNF = NRF_RADIO->CRCCNF;
-            savedPCNF0 = NRF_RADIO->PCNF0;
-            savedPCNF1 = NRF_RADIO->PCNF1;
-            savedDATAWHITEIV = NRF_RADIO->DATAWHITEIV;
-            savedSHORTS = NRF_RADIO->SHORTS;
+    void enterEsbProtocol() {
+        NRF_RADIO->TASKS_DISABLE = 1;
+        while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+        NRF_RADIO->EVENTS_DISABLED = 0;
 
-            NRF_RADIO->TASKS_DISABLE = 1;
-            while (NRF_RADIO->EVENTS_DISABLED == 0) {}
-            NRF_RADIO->EVENTS_DISABLED = 0;
+        NRF_RADIO->MODE = RADIO_MODE_MODE_Nrf_1Mbit << RADIO_MODE_MODE_Pos; // matches nRF24L01(+) default rate
 
-            NRF_RADIO->CRCCNF = RADIO_CRCCNF_LEN_Disabled; // don't drop "invalid" CRC packets
-            // treat everything as one long raw blob: 0-bit length field, max-size static payload
-            NRF_RADIO->PCNF0 = 0;
-            NRF_RADIO->PCNF1 = (uint32_t)(DEVICE_RADIO_MAX_PACKET_SIZE)
-                | (RADIO_PCNF1_ENDIAN_Little << RADIO_PCNF1_ENDIAN_Pos)
-                | (0 << RADIO_PCNF1_WHITEEN_Pos); // whitening off - capture the raw air bytes
-            // keep only READY->START (auto-arm on enable) and ADDRESS->RSSISTART (RSSI per capture)
-            NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
-                | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
+        // legacy ShockBurst framing: S0=1 byte, no length field, S1=1 byte (PCF)
+        NRF_RADIO->PCNF0 = (1 << RADIO_PCNF0_S0LEN_Pos)
+            | (0 << RADIO_PCNF0_LFLEN_Pos)
+            | (1 << RADIO_PCNF0_S1LEN_Pos);
+        NRF_RADIO->PCNF1 = (RADIO_PCNF1_WHITEEN_Disabled << RADIO_PCNF1_WHITEEN_Pos)
+            | (RADIO_PCNF1_ENDIAN_Big << RADIO_PCNF1_ENDIAN_Pos)     // ESB is big-endian on air
+            | (4 << RADIO_PCNF1_BALEN_Pos)                            // base address length: 4 bytes (+1 prefix byte = 5)
+            | ((uint32_t)(DEVICE_RADIO_MAX_PACKET_SIZE) << RADIO_PCNF1_STATLEN_Pos) // static 32-byte payload
+            | ((uint32_t)(DEVICE_RADIO_MAX_PACKET_SIZE) << RADIO_PCNF1_MAXLEN_Pos);
 
-            NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
-            NRF_RADIO->TASKS_RXEN = 1;
-            while (NRF_RADIO->EVENTS_READY == 0) {}
-            NRF_RADIO->EVENTS_READY = 0;
-            NRF_RADIO->TASKS_START = 1;
+        NRF_RADIO->CRCCNF = RADIO_CRCCNF_LEN_Two << RADIO_CRCCNF_LEN_Pos; // 2-byte CRC, like nRF24L01(+) default
+        NRF_RADIO->CRCINIT = 0xFFFFUL;
+        NRF_RADIO->CRCPOLY = 0x11021UL;
 
-            promiscuous = true;
-        } else {
-            NRF_RADIO->TASKS_DISABLE = 1;
-            while (NRF_RADIO->EVENTS_DISABLED == 0) {}
-            NRF_RADIO->EVENTS_DISABLED = 0;
+        applyEsbAddress();
+        NRF_RADIO->TXADDRESS = 0;
+        NRF_RADIO->RXADDRESSES = 1; // listen on logical address 0 (PREFIX0/BASE0) only
 
+        // keep only READY->START (auto-arm on enable) and ADDRESS->RSSISTART (RSSI per capture)
+        NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
+            | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
+
+        NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+        NRF_RADIO->TASKS_RXEN = 1;
+        while (NRF_RADIO->EVENTS_READY == 0) {}
+        NRF_RADIO->EVENTS_READY = 0;
+        NRF_RADIO->TASKS_START = 1;
+    }
+
+    void enterRawProtocol() {
+        NRF_RADIO->TASKS_DISABLE = 1;
+        while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+        NRF_RADIO->EVENTS_DISABLED = 0;
+
+        NRF_RADIO->MODE = RADIO_MODE_MODE_Nrf_1Mbit << RADIO_MODE_MODE_Pos; // 1Mbit catches the widest range of GFSK gear
+        NRF_RADIO->CRCCNF = RADIO_CRCCNF_LEN_Disabled; // don't drop "invalid" CRC packets
+        // treat everything as one long raw blob: 0-bit length field, max-size static payload
+        NRF_RADIO->PCNF0 = 0;
+        NRF_RADIO->PCNF1 = (uint32_t)(DEVICE_RADIO_MAX_PACKET_SIZE)
+            | (RADIO_PCNF1_ENDIAN_Little << RADIO_PCNF1_ENDIAN_Pos)
+            | (0 << RADIO_PCNF1_WHITEEN_Pos); // whitening off - capture the raw air bytes
+        // keep only READY->START (auto-arm on enable) and ADDRESS->RSSISTART (RSSI per capture)
+        NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
+            | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
+
+        NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+        NRF_RADIO->TASKS_RXEN = 1;
+        while (NRF_RADIO->EVENTS_READY == 0) {}
+        NRF_RADIO->EVENTS_READY = 0;
+        NRF_RADIO->TASKS_START = 1;
+    }
+
+    void enterMakeCodeProtocol() {
+        NRF_RADIO->TASKS_DISABLE = 1;
+        while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+        NRF_RADIO->EVENTS_DISABLED = 0;
+
+        if (savedRegistersValid) {
             NRF_RADIO->CRCCNF = savedCRCCNF;
             NRF_RADIO->PCNF0 = savedPCNF0;
             NRF_RADIO->PCNF1 = savedPCNF1;
             NRF_RADIO->DATAWHITEIV = savedDATAWHITEIV;
             NRF_RADIO->SHORTS = savedSHORTS;
-
-            promiscuous = false;
-
-            // hand control back to the normal protocol layer (re-does RXEN/START
-            // with its own configuration, exactly as MicroBitRadio::enable() would)
-            getRadio()->disable();
-            getRadio()->enable();
+            NRF_RADIO->MODE = savedMODE;
         }
+
+        // hand control back to the normal protocol layer (re-does RXEN/START
+        // with its own configuration, exactly as MicroBitRadio::enable() would)
+        getRadio()->disable();
+        getRadio()->enable();
+    }
+
+    // ---------- Gazell (PROTOCOL_GAZELL) - NOT WIRED UP YET ----------
+    // Unlike Raw/Esb above, Gazell isn't something we can drive by writing a
+    // few RADIO registers ourselves: nrf_gzll is Nordic's own closed-source
+    // link-layer library (prebuilt .a per chip/toolchain, no public source),
+    // and once enabled it takes over RADIO_IRQHandler and a hardware TIMER
+    // itself, running its own frequency-hopping state machine and calling
+    // your code back through callbacks - it doesn't hand bytes back through
+    // a register/buffer we can just peek at like PROTOCOL_RAW/PROTOCOL_ESB do.
+    // So this can't be "one more case in the switch" the way ESB was.
+    //
+    // What real integration needs, in order:
+    //   1. Get the library into this extension: download the nRF5 SDK
+    //      (nordicsemi.com/Products/Development-software/nRF5-SDK), and from
+    //      components/proprietary_rf/gzll/ take nrf_gzll.h, nrf_gzll_constants.h,
+    //      plus the prebuilt lib for nRF52833 (an ARM Cortex-M4/soft-float
+    //      variant - matching MakeCode's own build flags matters here) from
+    //      lib/. Add the .h files to this extension and the .a as a static lib
+    //      MakeCode's build links against (needs a pxt.json / yotta-style
+    //      addition most MakeCode extensions don't otherwise need).
+    //   2. Implement the callbacks nrf_gzll.h declares as extern "C" hooks -
+    //      at minimum nrf_gzll_host_rx_data_ready() (called from the library's
+    //      own IRQ context when a packet arrives) and nrf_gzll_disabled() -
+    //      and have them push into rawRxBuf/a small queue the same way
+    //      readRawAntennaPacket() expects, OR give Gazell its own read function
+    //      instead of reusing readRawAntennaPacket() (it doesn't share
+    //      Raw/Esb's PACKETPTR-based capture at all).
+    //   3. In enterGazellProtocol() (to replace this stub): call
+    //      nrf_gzll_init(NRF_GZLL_MODE_HOST), configure channel table /
+    //      addresses / datarate via its setters, then nrf_gzll_enable(). In
+    //      the MakeCode-protocol case, call nrf_gzll_disable() and wait for
+    //      nrf_gzll_disabled() before handing RADIO back to getRadio()->enable()
+    //      - Gazell must be cleanly disabled before anything else touches RADIO.
+    //   4. setFrequencyBand()/setGroup() as written don't apply to Gazell (it
+    //      manages its own channel table and pipe addresses) - decide whether
+    //      those should be redirected to nrf_gzll_set_channel_table()/
+    //      nrf_gzll_set_base_address_0() while this protocol is active, or
+    //      simply ignored with that documented.
+    //
+    // None of steps 1-2 can be done from here: they need the actual Nordic SDK
+    // binary, which has to be downloaded and license-accepted outside this
+    // session. Once you have it, this comment block is the checklist; ping me
+    // and we'll write enterGazellProtocol() and the callbacks against the real
+    // header.
+#ifdef NRF_GZLL_AVAILABLE
+    void enterGazellProtocol() {
+        // TODO: nrf_gzll_init(NRF_GZLL_MODE_HOST); configure channel table,
+        // addresses, datarate; nrf_gzll_enable(); see checklist above.
+    }
+#endif
+
+    /**
+     * Switches the radio to a different protocol/framing. Each protocol is a
+     * different combination of address matching, CRC and whitening on the same
+     * RADIO peripheral - switching is instant and doesn't need re-flashing.
+     * rf.setFrequencyBand() and rf.setGroup()/setTransmitPower() keep working
+     * the same way regardless of which protocol is active.
+     * @param protocol which protocol to switch to, eg: RadioProtocol.MakeCode
+     */
+    //% help=radio/set-protocol
+    //% weight=7 blockGap=8
+    //% blockId=radio_set_protocol block="rf set protocol %protocol"
+    //% advanced=true
+    void setProtocol(int protocol) {
+        if (radioEnable() != DEVICE_OK) return;
+        if (protocol == currentProtocol) return;
+
+        // leaving PROTOCOL_MAKECODE for the first time: remember its registers
+        if (currentProtocol == PROTOCOL_MAKECODE && !savedRegistersValid) {
+            savedCRCCNF = NRF_RADIO->CRCCNF;
+            savedPCNF0 = NRF_RADIO->PCNF0;
+            savedPCNF1 = NRF_RADIO->PCNF1;
+            savedDATAWHITEIV = NRF_RADIO->DATAWHITEIV;
+            savedSHORTS = NRF_RADIO->SHORTS;
+            savedMODE = NRF_RADIO->MODE;
+            savedRegistersValid = true;
+        }
+
+        switch (protocol) {
+            case PROTOCOL_MAKECODE:
+                enterMakeCodeProtocol();
+                break;
+            case PROTOCOL_RAW:
+                enterRawProtocol();
+                break;
+            case PROTOCOL_ESB:
+                enterEsbProtocol();
+                break;
+            case PROTOCOL_GAZELL:
+#ifdef NRF_GZLL_AVAILABLE
+                enterGazellProtocol();
+                break;
+#else
+                // the nrf_gzll library isn't linked into this build yet -
+                // see the checklist above enterGazellProtocol(). Ignore the
+                // request rather than silently doing nothing useful.
+                return;
+#endif
+            default:
+                // unknown protocol - ignore the request, stay on the current one
+                return;
+        }
+
+        currentProtocol = protocol;
     }
 
     /**
-     * Whether raw promiscuous/monitor mode is currently on.
+     * Which protocol the radio is currently using.
      */
-    //% help=radio/is-promiscuous-mode
+    //% help=radio/get-protocol
     //% weight=6 blockGap=8
     //% advanced=true
-    bool isPromiscuousMode() {
-        return promiscuous;
+    int getProtocol() {
+        return currentProtocol;
     }
 
     /**
      * Measures the current energy on the antenna at the active channel, in dBm,
      * independently of whether any recognisable packet is present. This is the
      * same "spectrum scanner" style reading other 2.4GHz radios expose - it
-     * does not require promiscuous mode and does not decode anything.
+     * does not require a particular protocol and does not decode anything.
      * @returns signal strength in dBm (negative; closer to 0 = stronger), or 0 if unavailable
      */
     //% help=radio/scan-rssi
@@ -390,32 +580,33 @@ CODAL_RADIO* getRadio() {
     }
 
     /**
-     * Internal use only. While promiscuous mode is on, returns whatever raw
-     * bytes were last captured off the air on the current channel, together
-     * with their RSSI - regardless of whether they form a valid micro:bit
-     * packet. Call rf.setPromiscuousMode(true) first.
-     * @returns NULL if promiscuous mode is off or nothing has been captured yet
+     * Internal use only. While the radio is on any protocol other than
+     * MakeCode (Raw, Esb, ...), returns whatever bytes were last captured off
+     * the air on the current channel using that protocol's framing, together
+     * with their RSSI. On Esb this means: only packets matching the address
+     * set with rf.setEsbAddress() and passing its CRC.
+     * @returns NULL if on PROTOCOL_MAKECODE or nothing captured yet
      */
     //%
     Buffer readRawAntennaPacket() {
-        if (!promiscuous) return NULL;
+        if (currentProtocol == PROTOCOL_MAKECODE) return NULL;
         if (NRF_RADIO->EVENTS_END == 0) return NULL;
         NRF_RADIO->EVENTS_END = 0;
 
         int rssi = -(int)(NRF_RADIO->RSSISAMPLE);
-        int length = DEVICE_RADIO_MAX_PACKET_SIZE; // fixed-size raw capture (see PCNF0/PCNF1 above)
+        int length = currentCaptureLength(); // depends on the active protocol's framing
 
-        uint8_t buf[DEVICE_RADIO_MAX_PACKET_SIZE + sizeof(int)]; // raw bytes + rssi
+        uint8_t buf[DEVICE_RADIO_MAX_PACKET_SIZE + 2 + sizeof(int)]; // captured bytes + rssi
         memset(buf, 0, sizeof(buf));
         memcpy(buf, rawRxBuf, length);
-        memcpy(buf + DEVICE_RADIO_MAX_PACKET_SIZE, &rssi, sizeof(int));
+        memcpy(buf + length, &rssi, sizeof(int));
 
         // radio keeps listening automatically (SHORTS: READY->START on re-enable elsewhere);
         // re-arm reception for the next capture
         NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
         NRF_RADIO->TASKS_START = 1;
 
-        return mkBuffer(buf, sizeof(buf));
+        return mkBuffer(buf, length + sizeof(int));
     }
 #endif // NRF52_SERIES && !DAL
 
@@ -463,4 +654,4 @@ CODAL_RADIO* getRadio() {
 #endif
 #endif
     }
-}
+}.
