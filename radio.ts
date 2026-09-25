@@ -518,7 +518,7 @@ namespace rf {
     //% blockId=rf_set_esb_address_ block="rf set esb address %address"
     //% group="Receive"
     //% weight=16
-    export function setRadioEsbAddress(address: Buffer) {
+    export function setRFEsbAddress(address: Buffer) {
         setEsbAddress(address);
     }
 
