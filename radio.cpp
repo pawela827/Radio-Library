@@ -44,6 +44,15 @@ using namespace pxt;
 #define DEVICE_RADIO_EVT_DATAGRAM MICROBIT_RADIO_EVT_DATAGRAM
 #endif
 
+// V2 (nRF52833) detection by chip, NOT by MICROBIT_H: codal-microbit-v2 also
+// defines MICROBIT_H, so CODAL_RADIO_MICROBIT_DAL is 1 on V2 as well and can't
+// be used to tell V1 and V2 apart.
+#if defined(NRF52_SERIES) || defined(NRF52833_XXAA) || defined(NRF52)
+#define RF_NRF52 1
+#else
+#define RF_NRF52 0
+#endif
+
 //% color=#E3008C weight=96 icon="\uf012"
 namespace rf {
     
@@ -266,7 +275,7 @@ CODAL_RADIO* getRadio() {
 #endif        
     }
 
-#if defined(NRF52_SERIES) && !CODAL_RADIO_MICROBIT_DAL
+#if RF_NRF52
     // ---------- protocol-level raw antenna access (V2 / nRF52833 only) ----------
     // Everything below talks to the RADIO peripheral directly, bypassing the
     // MicroBitRadio/NRF52Radio protocol layer entirely (its fixed BASE0="uBit"
@@ -331,25 +340,6 @@ CODAL_RADIO* getRadio() {
         NRF_RADIO->BASE0 = esbBitSwap(
             ((uint32_t)esbAddress[1] << 24) | ((uint32_t)esbAddress[2] << 16) |
             ((uint32_t)esbAddress[3] << 8) | (uint32_t)esbAddress[4]);
-    }
-
-    /**
-     * Sets the 5-byte on-air address ESB listens to and sends with - the same
-     * role as the address configured on an nRF24L01(+) module. Only takes
-     * effect while rf.setProtocol(RFProtocol.Esb) is active; call it again
-     * after switching protocol if you need a non-default address.
-     * @param address exactly 5 bytes, eg: hex literal like E7E7E7E7E7
-     */
-    //% help=rf/set-esb-address
-    //% weight=5 blockGap=8
-    //% blockId=rf_set_esb_address block="rf set esb address %address"
-    //% advanced=true
-    void setEsbAddress(Buffer address) {
-        if (NULL == address || address->length != 5) return;
-        for (int i = 0; i < 5; i++)
-            esbAddress[i] = address->data[i];
-        if (currentProtocol == PROTOCOL_ESB)
-            applyEsbAddress();
     }
 
     void enterEsbProtocol() {
@@ -481,6 +471,37 @@ CODAL_RADIO* getRadio() {
     }
 #endif
 
+    uint8_t rawTxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2]; // same layout as rawRxBuf - see currentCaptureLength()
+#endif // RF_NRF52
+
+    // ---------- exported functions ----------
+    // Each one is defined exactly once (so MakeCode's shim parser sees it once),
+    // with the V2-only body inside #if RF_NRF52 and a harmless stub for V1.
+
+    /**
+     * Sets the 5-byte on-air address ESB listens to and sends with - the same
+     * role as the address configured on an nRF24L01(+) module. Only takes
+     * effect while rf.setProtocol(RFProtocol.Esb) is active; call it again
+     * after switching protocol if you need a non-default address.
+     * @param address exactly 5 bytes, eg: hex literal like E7E7E7E7E7
+     */
+    //% help=rf/set-esb-address
+    //% weight=5 blockGap=8
+    //% blockId=rf_set_esb_address block="rf set esb address %address"
+    //% advanced=true
+    void setEsbAddress(Buffer address) {
+#if RF_NRF52
+        if (NULL == address || address->length != 5) return;
+        for (int i = 0; i < 5; i++)
+            esbAddress[i] = address->data[i];
+        if (currentProtocol == PROTOCOL_ESB)
+            applyEsbAddress();
+#else
+        (void)address;
+#endif
+    }
+
+
     /**
      * Switches the radio to a different protocol/framing. Each protocol is a
      * different combination of address matching, CRC and whitening on the same
@@ -494,6 +515,7 @@ CODAL_RADIO* getRadio() {
     //% blockId=rf_set_protocol block="rf set protocol %protocol"
     //% advanced=true
     void setProtocol(int protocol) {
+#if RF_NRF52
         if (radioEnable() != DEVICE_OK) return;
         if (protocol == currentProtocol) return;
 
@@ -534,6 +556,9 @@ CODAL_RADIO* getRadio() {
         }
 
         currentProtocol = protocol;
+#else
+        (void)protocol;
+#endif
     }
 
     /**
@@ -543,7 +568,11 @@ CODAL_RADIO* getRadio() {
     //% weight=6 blockGap=8
     //% advanced=true
     int getProtocol() {
+#if RF_NRF52
         return currentProtocol;
+#else
+        return 0;
+#endif
     }
 
     /**
@@ -558,6 +587,7 @@ CODAL_RADIO* getRadio() {
     //% blockId=rf_scan_rssi block="rf scan rssi"
     //% advanced=true
     int scanRSSI() {
+#if RF_NRF52
         if (radioEnable() != DEVICE_OK) return 0;
 
         bool wasReceiving = (NRF_RADIO->STATE == RADIO_STATE_STATE_Rx);
@@ -577,6 +607,9 @@ CODAL_RADIO* getRadio() {
         NRF_RADIO->TASKS_RSSISTOP = 1;
 
         return rssi;
+#else
+        return 0;
+#endif
     }
 
     /**
@@ -589,6 +622,7 @@ CODAL_RADIO* getRadio() {
      */
     //%
     Buffer readRawAntennaPacket() {
+#if RF_NRF52
         if (currentProtocol == PROTOCOL_MAKECODE) return NULL;
         if (NRF_RADIO->EVENTS_END == 0) return NULL;
         NRF_RADIO->EVENTS_END = 0;
@@ -607,9 +641,10 @@ CODAL_RADIO* getRadio() {
         NRF_RADIO->TASKS_START = 1;
 
         return mkBuffer(buf, length + sizeof(int));
+#else
+        return NULL;
+#endif
     }
-
-    uint8_t rawTxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2]; // same layout as rawRxBuf - see currentCaptureLength()
 
     /**
      * Sends raw bytes on-air using the given protocol's framing - one function
@@ -633,6 +668,7 @@ CODAL_RADIO* getRadio() {
     //% blockId=rf_send_raw_antenna_packet block="rf send raw %protocol packet %data"
     //% advanced=true
     void sendRawAntennaPacket(int protocol, Buffer data) {
+#if RF_NRF52
         if (protocol == PROTOCOL_MAKECODE || protocol == PROTOCOL_GAZELL) return;
         if (NULL == data || data->length == 0) return;
 
@@ -669,8 +705,10 @@ CODAL_RADIO* getRadio() {
         while (NRF_RADIO->EVENTS_READY == 0) {}
         NRF_RADIO->EVENTS_READY = 0;
         NRF_RADIO->TASKS_START = 1;
+#else
+        (void)protocol; (void)data;
+#endif
     }
-#endif // NRF52_SERIES && !DAL
 
     /**
     * Change the transmission and reception band of the radio to the given channel.
@@ -691,7 +729,7 @@ CODAL_RADIO* getRadio() {
 
         if (band < 0 || band > 140) return;
 
-#if CODAL_RADIO_MICROBIT_DAL
+#if !RF_NRF52
         // micro:bit V1 (nRF51822): no MAP register, hardware only spans 2400-2500MHz.
         // Clamp into the DAL's native 0-100 range (2400-2500MHz); values below 40
         // (i.e. below 2400MHz on the V2 scale) are not reachable on V1.
@@ -704,14 +742,15 @@ CODAL_RADIO* getRadio() {
         // CODAL's setFrequencyBand() only ever writes FREQUENCY and leaves MAP at
         // its power-on default (Default = 2400-2500MHz), so the 2360-2459MHz half of
         // the chip's documented operating range (2360-2500MHz) is otherwise unreachable.
+        // on nRF52833 MAP is not a separate register - it is bit 8 of FREQUENCY
         if (band < 100) {
             // 0-99 -> MAP=Low -> channel = 2360 + FREQUENCY (FREQUENCY 0-99)
-            NRF_RADIO->MAP = (RADIO_MAP_MAP_Low << RADIO_MAP_MAP_Pos);
-            NRF_RADIO->FREQUENCY = (uint32_t)band;
+            NRF_RADIO->FREQUENCY = (RADIO_FREQUENCY_MAP_Low << RADIO_FREQUENCY_MAP_Pos)
+                | (uint32_t)band;
         } else {
             // 100-140 -> MAP=Default -> channel = 2400 + FREQUENCY (FREQUENCY 60-100)
-            NRF_RADIO->MAP = (RADIO_MAP_MAP_Default << RADIO_MAP_MAP_Pos);
-            NRF_RADIO->FREQUENCY = (uint32_t)(band - 40);
+            NRF_RADIO->FREQUENCY = (RADIO_FREQUENCY_MAP_Default << RADIO_FREQUENCY_MAP_Pos)
+                | (uint32_t)(band - 40);
         }
 #endif
 #endif
