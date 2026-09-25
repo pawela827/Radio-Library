@@ -94,7 +94,7 @@ declare namespace rf {
      * RADIO peripheral - switching is instant and doesn't need re-flashing.
      * rf.setFrequencyBand() and rf.setGroup()/setTransmitPower() keep working
      * the same way regardless of which protocol is active.
-     * @param protocol which protocol to switch to, eg: RadioProtocol.MakeCode
+     * @param protocol which protocol to switch to, eg: RFProtocol.MakeCode
      */
     //% help=rf/set-protocol
     //% weight=7 blockGap=8
@@ -126,7 +126,7 @@ declare namespace rf {
 
     /**
      * Internal use only. While the radio is on a raw-capable protocol (eg.
-     * RadioProtocol.Raw or RadioProtocol.Esb), returns whatever bytes were
+     * RFProtocol.Raw or RFProtocol.Esb), returns whatever bytes were
      * last captured off the air on the current channel using that protocol's
      * framing, together with their RSSI.
      * @returns NULL if not on a raw-capable protocol or nothing captured yet
@@ -135,7 +135,7 @@ declare namespace rf {
     function readRawAntennaPacket(): Buffer;
 
     /**
-     * Sets the 5-byte on-air address used by RadioProtocol.Esb - the same role
+     * Sets the 5-byte on-air address used by RFProtocol.Esb - the same role
      * as the address configured on an nRF24L01(+) module. Only takes effect
      * while ESB is the active protocol.
      * @param address exactly 5 bytes
@@ -148,9 +148,9 @@ declare namespace rf {
 
     /**
      * Sends raw bytes on-air using the given protocol's framing. Switches to
-     * that protocol first if the radio isn't already on it. RadioProtocol.MakeCode
+     * that protocol first if the radio isn't already on it. RFProtocol.MakeCode
      * isn't accepted here - use radio.sendNumber()/sendString()/etc instead.
-     * @param protocol which protocol to send with (see RadioProtocol)
+     * @param protocol which protocol to send with (see RFProtocol)
      * @param data the bytes to transmit, up to 32 bytes
      */
     //% help=rf/send-raw-antenna-packet
