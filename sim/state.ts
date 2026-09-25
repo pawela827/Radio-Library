@@ -85,12 +85,18 @@ namespace pxsim {
         power = 0;
         transmitSerialNumber = false;
         datagram: RadioDatagram;
+        // raw antenna capture queue: fed by every packet seen on air, regardless
+        // of groupId - the sim's analog of promiscuous mode not filtering by
+        // address match. Only used while `promiscuous` is on.
+        promiscuousDatagram: RadioDatagram;
+        promiscuous = false;
         groupId: number;
         band: number;
         enable: boolean;
 
         constructor(private readonly runtime: Runtime, private readonly board: BaseBoard, dal: RadioDAL) {
             this.datagram = new RadioDatagram(runtime, dal);
+            this.promiscuousDatagram = new RadioDatagram(runtime, dal);
             this.power = 6; // default value
             this.groupId = 0;
             this.band = 7; // https://github.com/lancaster-university/microbit-dal/blob/master/inc/core/MicroBitConfig.h#L320
@@ -141,7 +147,22 @@ namespace pxsim {
         on() {
             this.enable = true;
          }
- 
+
+        setPromiscuousMode(enabled: boolean) {
+            if (this.enable) {
+                this.promiscuous = !!enabled;
+            }
+        }
+
+        // The simulator has no real antenna to measure, so this reports the
+        // RSSI configured in the simulator UI (same source as packet RSSI),
+        // falling back to a quiet-channel default when nothing is set - just
+        // like a real scan would read background noise with nothing transmitting.
+        scanRSSI(): number {
+            const configured = this.datagram.rssi;
+            return configured === undefined ? -95 : configured;
+        }
+
         raiseEvent(id: number, eventid: number) {
             if (this.enable) {
                 Runtime.postMessage(<SimulatorEventBusMessage>{
@@ -160,6 +181,11 @@ namespace pxsim {
                 if (this.groupId == packet.payload.groupId) {
                     this.datagram.queue(packet)
                }
+                // promiscuous mode ignores the groupId filter, the same way
+                // disabling the hardware address match on real V2 hardware does
+                if (this.promiscuous) {
+                    this.promiscuousDatagram.queue(packet)
+                }
             }
         }
     }
