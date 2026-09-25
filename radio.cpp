@@ -266,6 +266,159 @@ CODAL_RADIO* getRadio() {
 #endif        
     }
 
+#if defined(NRF52_SERIES) && !CODAL_RADIO_MICROBIT_DAL
+    // ---------- raw antenna access (V2 / nRF52833 only) ----------
+    // Everything below talks to the RADIO peripheral directly, bypassing the
+    // MicroBitRadio/NRF52Radio protocol layer entirely (its fixed BASE0="uBit"
+    // address match, CRC and whitening). This is how a real "raw scan" has to
+    // work: the protocol layer only ever hands back bytes that already passed
+    // its own framing, so anything off-protocol never reaches it as data.
+
+    bool promiscuous = false;
+
+    // registers saved before entering promiscuous mode, so normal rf.on()/
+    // send()/recv() keeps working correctly once promiscuous mode is turned off
+    uint32_t savedCRCCNF, savedPCNF0, savedPCNF1, savedDATAWHITEIV, savedSHORTS;
+    uint8_t rawRxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2]; // +2: raw packets carry their own length byte(s)
+
+    /**
+     * Turns raw "monitor mode" on or off. While on, the radio stops enforcing
+     * the micro:bit packet framing (address match, whitening, CRC) so
+     * rf.readRawAntennaPacket() can see whatever is actually on the air on the
+     * current channel - not just valid micro:bit packets. Normal rf.on()/send()/
+     * receive still work as before once this is turned back off.
+     * @param enabled true to start sniffing raw bytes, false to return to normal mode
+     */
+    //% help=radio/set-promiscuous-mode
+    //% weight=7 blockGap=8
+    //% blockId=radio_set_promiscuous_mode block="rf set promiscuous mode %enabled"
+    //% advanced=true
+    void setPromiscuousMode(bool enabled) {
+        if (radioEnable() != DEVICE_OK) return;
+        if (enabled == promiscuous) return;
+
+        if (enabled) {
+            // save what MicroBitRadio/NRF52Radio configured, so we can restore it
+            savedCRCCNF = NRF_RADIO->CRCCNF;
+            savedPCNF0 = NRF_RADIO->PCNF0;
+            savedPCNF1 = NRF_RADIO->PCNF1;
+            savedDATAWHITEIV = NRF_RADIO->DATAWHITEIV;
+            savedSHORTS = NRF_RADIO->SHORTS;
+
+            NRF_RADIO->TASKS_DISABLE = 1;
+            while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+            NRF_RADIO->EVENTS_DISABLED = 0;
+
+            NRF_RADIO->CRCCNF = RADIO_CRCCNF_LEN_Disabled; // don't drop "invalid" CRC packets
+            // treat everything as one long raw blob: 0-bit length field, max-size static payload
+            NRF_RADIO->PCNF0 = 0;
+            NRF_RADIO->PCNF1 = (uint32_t)(DEVICE_RADIO_MAX_PACKET_SIZE)
+                | (RADIO_PCNF1_ENDIAN_Little << RADIO_PCNF1_ENDIAN_Pos)
+                | (0 << RADIO_PCNF1_WHITEEN_Pos); // whitening off - capture the raw air bytes
+            // keep only READY->START (auto-arm on enable) and ADDRESS->RSSISTART (RSSI per capture)
+            NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
+                | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
+
+            NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+            NRF_RADIO->TASKS_RXEN = 1;
+            while (NRF_RADIO->EVENTS_READY == 0) {}
+            NRF_RADIO->EVENTS_READY = 0;
+            NRF_RADIO->TASKS_START = 1;
+
+            promiscuous = true;
+        } else {
+            NRF_RADIO->TASKS_DISABLE = 1;
+            while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+            NRF_RADIO->EVENTS_DISABLED = 0;
+
+            NRF_RADIO->CRCCNF = savedCRCCNF;
+            NRF_RADIO->PCNF0 = savedPCNF0;
+            NRF_RADIO->PCNF1 = savedPCNF1;
+            NRF_RADIO->DATAWHITEIV = savedDATAWHITEIV;
+            NRF_RADIO->SHORTS = savedSHORTS;
+
+            promiscuous = false;
+
+            // hand control back to the normal protocol layer (re-does RXEN/START
+            // with its own configuration, exactly as MicroBitRadio::enable() would)
+            getRadio()->disable();
+            getRadio()->enable();
+        }
+    }
+
+    /**
+     * Whether raw promiscuous/monitor mode is currently on.
+     */
+    //% help=radio/is-promiscuous-mode
+    //% weight=6 blockGap=8
+    //% advanced=true
+    bool isPromiscuousMode() {
+        return promiscuous;
+    }
+
+    /**
+     * Measures the current energy on the antenna at the active channel, in dBm,
+     * independently of whether any recognisable packet is present. This is the
+     * same "spectrum scanner" style reading other 2.4GHz radios expose - it
+     * does not require promiscuous mode and does not decode anything.
+     * @returns signal strength in dBm (negative; closer to 0 = stronger), or 0 if unavailable
+     */
+    //% help=radio/scan-rssi
+    //% weight=10 blockGap=8
+    //% blockId=radio_scan_rssi block="rf scan rssi"
+    //% advanced=true
+    int scanRSSI() {
+        if (radioEnable() != DEVICE_OK) return 0;
+
+        bool wasReceiving = (NRF_RADIO->STATE == RADIO_STATE_STATE_Rx);
+        if (!wasReceiving) {
+            NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+            NRF_RADIO->TASKS_RXEN = 1;
+            while (NRF_RADIO->EVENTS_READY == 0) {}
+            NRF_RADIO->EVENTS_READY = 0;
+        }
+
+        NRF_RADIO->EVENTS_RSSIEND = 0;
+        NRF_RADIO->TASKS_RSSISTART = 1;
+        while (NRF_RADIO->EVENTS_RSSIEND == 0) {}
+        NRF_RADIO->EVENTS_RSSIEND = 0;
+
+        int rssi = -(int)(NRF_RADIO->RSSISAMPLE);
+        NRF_RADIO->TASKS_RSSISTOP = 1;
+
+        return rssi;
+    }
+
+    /**
+     * Internal use only. While promiscuous mode is on, returns whatever raw
+     * bytes were last captured off the air on the current channel, together
+     * with their RSSI - regardless of whether they form a valid micro:bit
+     * packet. Call rf.setPromiscuousMode(true) first.
+     * @returns NULL if promiscuous mode is off or nothing has been captured yet
+     */
+    //%
+    Buffer readRawAntennaPacket() {
+        if (!promiscuous) return NULL;
+        if (NRF_RADIO->EVENTS_END == 0) return NULL;
+        NRF_RADIO->EVENTS_END = 0;
+
+        int rssi = -(int)(NRF_RADIO->RSSISAMPLE);
+        int length = DEVICE_RADIO_MAX_PACKET_SIZE; // fixed-size raw capture (see PCNF0/PCNF1 above)
+
+        uint8_t buf[DEVICE_RADIO_MAX_PACKET_SIZE + sizeof(int)]; // raw bytes + rssi
+        memset(buf, 0, sizeof(buf));
+        memcpy(buf, rawRxBuf, length);
+        memcpy(buf + DEVICE_RADIO_MAX_PACKET_SIZE, &rssi, sizeof(int));
+
+        // radio keeps listening automatically (SHORTS: READY->START on re-enable elsewhere);
+        // re-arm reception for the next capture
+        NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+        NRF_RADIO->TASKS_START = 1;
+
+        return mkBuffer(buf, sizeof(buf));
+    }
+#endif // NRF52_SERIES && !DAL
+
     /**
     * Change the transmission and reception band of the radio to the given channel.
     * A single continuous parameter spanning the chip's full RF range: 0 = 2360MHz, 140 = 2500MHz.
