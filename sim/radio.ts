@@ -53,6 +53,37 @@ namespace pxsim.rf {
         state.datagram.onReceived(handler);
     }
 
+    export function setPromiscuousMode(enabled: boolean): void {
+        const state = pxsim.getRadioState();
+        state.setPromiscuousMode(enabled);
+    }
+
+    export function isPromiscuousMode(): boolean {
+        const state = pxsim.getRadioState();
+        return state.promiscuous;
+    }
+
+    export function scanRSSI(): number {
+        const state = pxsim.getRadioState();
+        return state.scanRSSI();
+    }
+
+    export function readRawAntennaPacket() {
+        const state = pxsim.getRadioState();
+        const packet = state.promiscuousDatagram.recv();
+        const buf = packet.payload.bufferData;
+        const n = buf.length;
+        if (!n)
+            return undefined;
+
+        const rbuf = BufferMethods.createBuffer(n + 4);
+        for (let i = 0; i < buf.length; ++i)
+            rbuf.data[i] = buf[i];
+        // append RSSI
+        BufferMethods.setNumber(rbuf, BufferMethods.NumberFormat.Int32LE, n, packet.rssi)
+        return rbuf;
+    }
+
     export function off(){
         const state = pxsim.getRadioState();
         state.off();
