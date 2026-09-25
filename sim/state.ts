@@ -85,7 +85,8 @@ namespace pxsim {
     export const RADIO_PROTOCOL_MAKECODE = 0;
     export const RADIO_PROTOCOL_RAW = 1;
     export const RADIO_PROTOCOL_ESB = 2;
-    // reserved for later: Zigbee = 3, BLE = 4, Gazell = 5
+    export const RADIO_PROTOCOL_GAZELL = 5; // not functional yet - see radio.cpp
+    // reserved for later: Zigbee = 3, BLE = 4
 
     export class RadioState {
         power = 0;
