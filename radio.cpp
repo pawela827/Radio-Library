@@ -267,19 +267,47 @@ CODAL_RADIO* getRadio() {
     }
 
     /**
-    * Change the transmission and reception band of the radio to the given channel
-    * @param band a frequency band in the range 0 - 83. Each step is 1MHz wide, based at 2400MHz.
+    * Change the transmission and reception band of the radio to the given channel.
+    * A single continuous parameter spanning the chip's full RF range: 0 = 2360MHz, 140 = 2500MHz.
+    * Internally this is split across the nRF52833 RADIO peripheral's two frequency maps:
+    * band 0-99 selects MAP=Low (2360-2459MHz), band 100-140 selects MAP=Default (2460-2500MHz).
+    * @param band a frequency band in the range 0 - 140. Each step is 1MHz wide, based at 2360MHz.
     **/
     //% help=radio/set-frequency-band
     //% weight=8 blockGap=8
     //% blockId=radio_set_frequency_band block="radio set frequency band %band"
     //% band.label="value"
-    //% band.min=0 band.max=83
+    //% band.min=0 band.max=140
     //% advanced=true
     void setFrequencyBand(int band) {
-#ifdef CODAL_RADIO        
+#ifdef CODAL_RADIO
         if (radioEnable() != DEVICE_OK) return;
-        getRadio()->setFrequencyBand(band);
-#endif        
+
+        if (band < 0 || band > 140) return;
+
+#if CODAL_RADIO_MICROBIT_DAL
+        // micro:bit V1 (nRF51822): no MAP register, hardware only spans 2400-2500MHz.
+        // Clamp into the DAL's native 0-100 range (2400-2500MHz); values below 40
+        // (i.e. below 2400MHz on the V2 scale) are not reachable on V1.
+        int v1Band = band - 40;
+        if (v1Band < 0) v1Band = 0;
+        if (v1Band > 100) v1Band = 100;
+        getRadio()->setFrequencyBand(v1Band);
+#else
+        // micro:bit V2 (nRF52833): use the RADIO peripheral's MAP bit directly, since
+        // CODAL's setFrequencyBand() only ever writes FREQUENCY and leaves MAP at
+        // its power-on default (Default = 2400-2500MHz), so the 2360-2459MHz half of
+        // the chip's documented operating range (2360-2500MHz) is otherwise unreachable.
+        if (band < 100) {
+            // 0-99 -> MAP=Low -> channel = 2360 + FREQUENCY (FREQUENCY 0-99)
+            NRF_RADIO->MAP = (RADIO_MAP_MAP_Low << RADIO_MAP_MAP_Pos);
+            NRF_RADIO->FREQUENCY = (uint32_t)band;
+        } else {
+            // 100-140 -> MAP=Default -> channel = 2400 + FREQUENCY (FREQUENCY 60-100)
+            NRF_RADIO->MAP = (RADIO_MAP_MAP_Default << RADIO_MAP_MAP_Pos);
+            NRF_RADIO->FREQUENCY = (uint32_t)(band - 40);
+        }
+#endif
+#endif
     }
 }
