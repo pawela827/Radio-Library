@@ -1,4 +1,4 @@
-enum RadioPacketProperty {
+enum RFPacketProperty {
     //% blockIdentity=rf._packetProperty
     //% block="signal strength"
     SignalStrength = 2,
@@ -10,7 +10,7 @@ enum RadioPacketProperty {
     SerialNumber = 1
 }
 
-enum RadioProtocol {
+enum RFProtocol {
     //% block="micro:bit"
     MakeCode = 0,
     //% block="raw"
@@ -62,7 +62,7 @@ namespace rf {
     let transmittingSerial: boolean;
     let initialized = false;
 
-    export let lastPacket: RadioPacket;
+    export let lastPacket: RFPacket;
     let onReceivedNumberHandler: (receivedNumber: number) => void;
     let onReceivedValueHandler: (name: string, value: number) => void;
     let onReceivedStringHandler: (receivedString: string) => void;
@@ -77,7 +77,7 @@ namespace rf {
     function handleDataReceived() {
         let buffer: Buffer = readRawPacket();
         while (buffer) {
-            lastPacket = RadioPacket.getPacket(buffer);
+            lastPacket = RFPacket.getPacket(buffer);
             switch (lastPacket.packetType) {
                 case PACKET_TYPE_NUMBER:
                 case PACKET_TYPE_DOUBLE:
@@ -166,9 +166,9 @@ namespace rf {
     export function receivedPacket(type: number) {
         if (lastPacket) {
             switch (type) {
-                case RadioPacketProperty.Time: return lastPacket.time;
-                case RadioPacketProperty.SerialNumber: return lastPacket.serial;
-                case RadioPacketProperty.SignalStrength: return lastPacket.signal;
+                case RFPacketProperty.Time: return lastPacket.time;
+                case RFPacketProperty.SerialNumber: return lastPacket.serial;
+                case RFPacketProperty.SignalStrength: return lastPacket.signal;
             }
         }
         return 0;
@@ -180,19 +180,19 @@ namespace rf {
      */
     //% blockId=rf_packet_property block="%note"
     //% shim=TD_ID blockHidden=1
-    export function _packetProperty(type: RadioPacketProperty): number {
+    export function _packetProperty(type: RFPacketProperty): number {
         return type;
     }
 
-    export class RadioPacket {
+    export class RFPacket {
         public static getPacket(data: Buffer) {
             if (!data) return undefined;
             // last 4 bytes is RSSi
-            return new RadioPacket(data);
+            return new RFPacket(data);
         }
 
         public static mkPacket(packetType: number) {
-            const res = new RadioPacket();
+            const res = new RFPacket();
             res.data[0] = packetType;
             return res;
         }
@@ -298,13 +298,13 @@ namespace rf {
     //% value.label="value"
     //% group="Send"
     export function sendNumber(value: number) {
-        let packet: RadioPacket;
+        let packet: RFPacket;
 
         if (value === (value | 0)) {
-            packet = RadioPacket.mkPacket(PACKET_TYPE_NUMBER);
+            packet = RFPacket.mkPacket(PACKET_TYPE_NUMBER);
         }
         else {
-            packet = RadioPacket.mkPacket(PACKET_TYPE_DOUBLE);
+            packet = RFPacket.mkPacket(PACKET_TYPE_DOUBLE);
         }
 
         packet.numberPayload = value;
@@ -324,13 +324,13 @@ namespace rf {
     //% name.label="name" value.label="value"
     //% group="Send"
     export function sendValue(name: string, value: number) {
-        let packet: RadioPacket;
+        let packet: RFPacket;
 
         if (value === (value | 0)) {
-            packet = RadioPacket.mkPacket(PACKET_TYPE_VALUE);
+            packet = RFPacket.mkPacket(PACKET_TYPE_VALUE);
         }
         else {
-            packet = RadioPacket.mkPacket(PACKET_TYPE_DOUBLE_VALUE);
+            packet = RFPacket.mkPacket(PACKET_TYPE_DOUBLE_VALUE);
         }
 
         packet.numberPayload = value;
@@ -349,7 +349,7 @@ namespace rf {
     //% msg.shadowOptions.toString=true
     //% group="Send"
     export function sendString(value: string) {
-        const packet = RadioPacket.mkPacket(PACKET_TYPE_STRING);
+        const packet = RFPacket.mkPacket(PACKET_TYPE_STRING);
         packet.stringPayload = value;
         sendPacket(packet);
     }
@@ -362,7 +362,7 @@ namespace rf {
     //% weight=57
     //% advanced=true
     export function sendBuffer(msg: Buffer) {
-        const packet = RadioPacket.mkPacket(PACKET_TYPE_BUFFER);
+        const packet = RFPacket.mkPacket(PACKET_TYPE_BUFFER);
         packet.bufferPayload = msg;
         sendPacket(packet);
     }
@@ -380,7 +380,7 @@ namespace rf {
         transmittingSerial = transmit;
     }
 
-    function sendPacket(packet: RadioPacket) {
+    function sendPacket(packet: RFPacket) {
         packet.time = control.millis();
         packet.serial = transmittingSerial ? control.deviceSerialNumber() : 0;
         rf.sendRawPacket(packet.data);
@@ -425,7 +425,7 @@ namespace rf {
 
     /**
      * A raw capture from the antenna, taken while the radio is on a raw-capable
-     * protocol (eg. RadioProtocol.Raw). Unlike RadioPacket, this has no protocol
+     * protocol (eg. RFProtocol.Raw). Unlike RFPacket, this has no protocol
      * structure - it's whatever bytes were physically on the air on the current
      * channel, good or bad CRC alike.
      */
@@ -438,7 +438,7 @@ namespace rf {
         private constructor(public readonly data: Buffer) { }
 
         // whole capture minus the trailing 4-byte RSSI (see readRawAntennaPacket in radio.cpp).
-        // On RadioProtocol.Raw this is the plain payload; on RadioProtocol.Esb it's
+        // On RFProtocol.Raw this is the plain payload; on RFProtocol.Esb it's
         // [S0][S1][payload...] - use esbPayload/esbS0/esbS1 to split those apart.
         get bytes() {
             return this.data.slice(0, this.data.length - 4);
@@ -465,16 +465,16 @@ namespace rf {
     }
 
     /**
-     * Switches the radio to a different protocol. RadioProtocol.MakeCode is the
+     * Switches the radio to a different protocol. RFProtocol.MakeCode is the
      * normal mode (send/receive between micro:bits); the others reconfigure the
-     * same RADIO peripheral to speak a different framing - see RadioProtocol.
-     * @param protocol the protocol to switch to, eg: RadioProtocol.MakeCode
+     * same RADIO peripheral to speak a different framing - see RFProtocol.
+     * @param protocol the protocol to switch to, eg: RFProtocol.MakeCode
      */
     //% help=rf/set-protocol
     //% blockId=rf_set_protocol_ block="rf set protocol %protocol"
     //% group="Receive"
     //% weight=20
-    export function setRadioProtocol(protocol: RadioProtocol) {
+    export function setRFProtocol(protocol: RFProtocol) {
         setProtocol(protocol);
     }
 
@@ -485,7 +485,7 @@ namespace rf {
     //% blockId=rf_get_protocol_ block="rf protocol"
     //% group="Receive"
     //% weight=19
-    export function getRadioProtocol(): RadioProtocol {
+    export function getRFProtocol(): RFProtocol {
         return getProtocol();
     }
 
@@ -493,8 +493,8 @@ namespace rf {
      * Reads whatever raw bytes were last captured off the antenna on the current
      * channel, together with their signal strength - independent of protocol,
      * exactly as other radio modules expose a raw receive. Only produces data
-     * while on a raw-capable protocol (rf.setRadioProtocol(RadioProtocol.Raw)
-     * or RadioProtocol.Esb).
+     * while on a raw-capable protocol (rf.setRFProtocol(RFProtocol.Raw)
+     * or RFProtocol.Esb).
      * @returns undefined if not on a raw-capable protocol or nothing captured yet
      */
     //% help=rf/scan-raw
@@ -507,10 +507,10 @@ namespace rf {
     }
 
     /**
-     * Sets the 5-byte on-air address used by RadioProtocol.Esb - the same role
+     * Sets the 5-byte on-air address used by RFProtocol.Esb - the same role
      * as the address configured on an nRF24L01(+) module (eg. the common
      * default 0xE7E7E7E7E7 used by many Arduino RF24 libraries). Only takes
-     * effect on ESB; switch to RadioProtocol.Esb first, or call this again
+     * effect on ESB; switch to RFProtocol.Esb first, or call this again
      * after switching to it if you need a non-default address.
      * @param address exactly 5 bytes
      */
@@ -526,20 +526,20 @@ namespace rf {
      * Sends raw bytes on-air using the given protocol's framing - one function
      * for every raw-capable protocol rather than a separate send function per
      * protocol. Switches the radio to that protocol first if it isn't already
-     * on it (so you don't need to call rf.setRadioProtocol() separately), and
+     * on it (so you don't need to call rf.setRFProtocol() separately), and
      * leaves it in that protocol afterwards, still listening (rf.scanRaw()
      * keeps working right after). What bytes to pass depends on the protocol:
-     * on RadioProtocol.Esb, `data` is the payload only (up to 32 bytes) - the
-     * [S0][S1] header is filled in as zero automatically. RadioProtocol.MakeCode
+     * on RFProtocol.Esb, `data` is the payload only (up to 32 bytes) - the
+     * [S0][S1] header is filled in as zero automatically. RFProtocol.MakeCode
      * isn't accepted here; use rf.sendNumber()/sendString()/etc for that.
-     * @param protocol which protocol to send with, eg: RadioProtocol.Esb
+     * @param protocol which protocol to send with, eg: RFProtocol.Esb
      * @param data the bytes to transmit, up to 32 bytes
      */
     //% help=rf/send-raw
     //% blockId=rf_send_raw block="rf send raw %protocol packet %data"
     //% group="Send"
     //% weight=21
-    export function sendRaw(protocol: RadioProtocol, data: Buffer) {
+    export function sendRaw(protocol: RFProtocol, data: Buffer) {
         sendRawAntennaPacket(protocol, data);
     }
 }
