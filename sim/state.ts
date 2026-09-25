@@ -81,15 +81,24 @@ namespace pxsim {
         }
     }
 
+    // keep in sync with RadioProtocol in radio.ts/shims.d.ts
+    export const RADIO_PROTOCOL_MAKECODE = 0;
+    export const RADIO_PROTOCOL_RAW = 1;
+    export const RADIO_PROTOCOL_ESB = 2;
+    // reserved for later: Zigbee = 3, BLE = 4, Gazell = 5
+
     export class RadioState {
         power = 0;
         transmitSerialNumber = false;
         datagram: RadioDatagram;
         // raw antenna capture queue: fed by every packet seen on air, regardless
-        // of groupId - the sim's analog of promiscuous mode not filtering by
-        // address match. Only used while `promiscuous` is on.
+        // of groupId - the sim's analog of a raw protocol not filtering by
+        // address match. Only used while `protocol` is RAW or ESB.
         promiscuousDatagram: RadioDatagram;
-        promiscuous = false;
+        protocol = RADIO_PROTOCOL_MAKECODE;
+        // the simulator has no real nRF24L01 to talk to, so this is only kept
+        // for rf.getEsbAddress()-style introspection / consistency with radio.cpp
+        esbAddress: number[] = [0xE7, 0xE7, 0xE7, 0xE7, 0xE7];
         groupId: number;
         band: number;
         enable: boolean;
@@ -148,9 +157,21 @@ namespace pxsim {
             this.enable = true;
          }
 
-        setPromiscuousMode(enabled: boolean) {
+        setProtocol(protocol: number) {
             if (this.enable) {
-                this.promiscuous = !!enabled;
+                // unknown protocol - ignore the request, stay on the current one
+                // (mirrors radio.cpp's default: case in setProtocol's switch)
+                if (protocol !== RADIO_PROTOCOL_MAKECODE
+                    && protocol !== RADIO_PROTOCOL_RAW
+                    && protocol !== RADIO_PROTOCOL_ESB) return;
+                this.protocol = protocol;
+            }
+        }
+
+        setEsbAddress(address: ArrayLike<number>) {
+            if (this.enable && address && address.length === 5) {
+                for (let i = 0; i < 5; ++i)
+                    this.esbAddress[i] = address[i] & 0xff;
             }
         }
 
@@ -181,9 +202,12 @@ namespace pxsim {
                 if (this.groupId == packet.payload.groupId) {
                     this.datagram.queue(packet)
                }
-                // promiscuous mode ignores the groupId filter, the same way
-                // disabling the hardware address match on real V2 hardware does
-                if (this.promiscuous) {
+                // Raw and Esb both ignore the groupId filter, the same way
+                // disabling the hardware address match on real V2 hardware does.
+                // (The simulator can't talk to a real nRF24L01, so Esb here is
+                // only a stand-in for testing rf.scanRaw()/esbPayload logic,
+                // not a real ShockBurst address/CRC filter.)
+                if (this.protocol === RADIO_PROTOCOL_RAW || this.protocol === RADIO_PROTOCOL_ESB) {
                     this.promiscuousDatagram.queue(packet)
                 }
             }
