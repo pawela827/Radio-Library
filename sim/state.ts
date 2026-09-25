@@ -125,7 +125,11 @@ namespace pxsim {
         setFrequencyBand(band: number) {
             if (this.enable) {
                 band = band | 0;
-                if (band < 0 || band > 83) return;
+                // 0-140 spans the chip's full 2360-2500MHz range (see radio.cpp):
+                // 0-99 -> 2360-2459MHz (MAP=Low), 100-140 -> 2460-2500MHz (MAP=Default).
+                // The simulator doesn't model actual RF behaviour, so band is only
+                // stored for display/reference purposes.
+                if (band < 0 || band > 140) return;
                 this.band = band;
             }
         }
@@ -160,4 +164,3 @@ namespace pxsim {
         }
     }
 }
-
