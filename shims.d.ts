@@ -158,6 +158,19 @@ declare namespace rf {
     //% blockId=rf_send_raw_antenna_packet block="rf send raw %protocol packet %data"
     //% advanced=true shim=rf::sendRawAntennaPacket
     function sendRawAntennaPacket(protocol: int32, data: Buffer): void;
+
+    /**
+     * Test/diagnostic: the frequency the RF hardware is actually set to, in MHz,
+     * read straight from the chip's FREQUENCY register (including the MAP bit on
+     * V2) - not from any variable in this extension. Useful to confirm that
+     * rf.setFrequencyBand() really reached the hardware.
+     * @returns frequency in MHz (eg. 2412), or 0 if unavailable
+     */
+    //% help=rf/get-frequency-mhz
+    //% weight=3 blockGap=8
+    //% blockId=rf_get_frequency_mhz block="rf actual frequency (MHz)"
+    //% advanced=true shim=rf::getFrequencyMHz
+    function getFrequencyMHz(): int32;
 }
 
 // Auto-generated. Do not edit. Really.
