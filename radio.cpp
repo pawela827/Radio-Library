@@ -742,6 +742,17 @@ CODAL_RADIO* getRadio() {
         // CODAL's setFrequencyBand() only ever writes FREQUENCY and leaves MAP at
         // its power-on default (Default = 2400-2500MHz), so the 2360-2459MHz half of
         // the chip's documented operating range (2360-2500MHz) is otherwise unreachable.
+        // FREQUENCY is only latched into the synthesizer on RX/TX ramp-up, so
+        // writing it while the receiver is already running does NOT retune it.
+        // If the receiver is active: stop it, write the new frequency, start it again.
+        bool wasActive = (NRF_RADIO->STATE != RADIO_STATE_STATE_Disabled);
+        if (wasActive) {
+            NRF_RADIO->EVENTS_DISABLED = 0;
+            NRF_RADIO->TASKS_DISABLE = 1;
+            while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+            NRF_RADIO->EVENTS_DISABLED = 0;
+        }
+
         // on nRF52833 MAP is not a separate register - it is bit 8 of FREQUENCY
         if (band < 100) {
             // 0-99 -> MAP=Low -> channel = 2360 + FREQUENCY (FREQUENCY 0-99)
@@ -751,6 +762,15 @@ CODAL_RADIO* getRadio() {
             // 100-140 -> MAP=Default -> channel = 2400 + FREQUENCY (FREQUENCY 60-100)
             NRF_RADIO->FREQUENCY = (RADIO_FREQUENCY_MAP_Default << RADIO_FREQUENCY_MAP_Pos)
                 | (uint32_t)(band - 40);
+        }
+
+        if (wasActive) {
+            // back to listening, now on the new frequency
+            NRF_RADIO->EVENTS_READY = 0;
+            NRF_RADIO->TASKS_RXEN = 1;
+            while (NRF_RADIO->EVENTS_READY == 0) {}
+            NRF_RADIO->EVENTS_READY = 0;
+            NRF_RADIO->TASKS_START = 1;
         }
 #endif
 #endif
