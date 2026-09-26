@@ -109,6 +109,12 @@ namespace pxsim.rf {
         });
     }
 
+    export function getFrequencyMHz(): number {
+        const state = pxsim.getRFState();
+        // simulator has no real hardware register - report what setFrequencyBand() stored
+        return 2360 + state.band;
+    }
+
     export function off(){
         const state = pxsim.getRFState();
         state.off();
