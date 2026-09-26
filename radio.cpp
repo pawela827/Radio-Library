@@ -711,6 +711,34 @@ CODAL_RADIO* getRadio() {
     }
 
     /**
+     * Test/diagnostic: the frequency the RF hardware is actually set to, in MHz,
+     * read straight from the chip's FREQUENCY register (including the MAP bit on
+     * V2) - not from any variable in this extension. Useful to confirm that
+     * rf.setFrequencyBand() really reached the hardware.
+     * @returns frequency in MHz (eg. 2412), or 0 if unavailable
+     */
+    //% help=rf/get-frequency-mhz
+    //% weight=3 blockGap=8
+    //% blockId=rf_get_frequency_mhz block="rf actual frequency (MHz)"
+    //% advanced=true
+    int getFrequencyMHz() {
+#ifdef CODAL_RADIO
+        if (radioEnable() != DEVICE_OK) return 0;
+        uint32_t f = NRF_RADIO->FREQUENCY;
+#if RF_NRF52
+        // bit 8 = MAP: 1 (Low) -> 2360 + FREQUENCY, 0 (Default) -> 2400 + FREQUENCY
+        int base = ((f >> RADIO_FREQUENCY_MAP_Pos) & 1) ? 2360 : 2400;
+        return base + (int)(f & 0x7F);
+#else
+        // V1 (nRF51): no MAP bit, always 2400 + FREQUENCY
+        return 2400 + (int)(f & 0x7F);
+#endif
+#else
+        return 0;
+#endif
+    }
+
+    /**
     * Change the transmission and reception band of the radio to the given channel.
     * A single continuous parameter spanning the chip's full RF range: 0 = 2360MHz, 140 = 2500MHz.
     * Internally this is split across the nRF52833 RADIO peripheral's two frequency maps:
