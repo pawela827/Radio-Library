@@ -697,19 +697,24 @@ CODAL_RADIO* getRadio() {
         NRF_RADIO->EVENTS_END = 0;
 
         int rssi = -(int)(NRF_RADIO->RSSISAMPLE);
+        // CRC pass/fail for the frame just received - the protocol-detection test.
+        // Read BEFORE re-arming. Raw has CRC disabled so this is meaningless there
+        // (stays whatever it was); Esb/Zigbee set a real CRC, so 1 = valid frame.
+        int crcOk = (NRF_RADIO->CRCSTATUS == RADIO_CRCSTATUS_CRCSTATUS_CRCOk) ? 1 : 0;
         int length = currentCaptureLength(); // depends on the active protocol's framing
 
-        uint8_t buf[RAW_BUF_SIZE + sizeof(int)]; // captured bytes + rssi
+        uint8_t buf[RAW_BUF_SIZE + 2 * sizeof(int)]; // captured bytes + rssi + crcOk
         memset(buf, 0, sizeof(buf));
         memcpy(buf, rawRxBuf, length);
         memcpy(buf + length, &rssi, sizeof(int));
+        memcpy(buf + length + sizeof(int), &crcOk, sizeof(int));
 
         // radio keeps listening automatically (SHORTS: READY->START on re-enable elsewhere);
         // re-arm reception for the next capture
         NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
         NRF_RADIO->TASKS_START = 1;
 
-        return mkBuffer(buf, length + sizeof(int));
+        return mkBuffer(buf, length + 2 * sizeof(int));
 #else
         return NULL;
 #endif
