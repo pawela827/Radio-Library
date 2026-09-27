@@ -290,8 +290,9 @@ CODAL_RADIO* getRadio() {
     const int PROTOCOL_MAKECODE = 0; // normal micro:bit packets (MicroBitRadio/NRF52Radio defaults)
     const int PROTOCOL_RAW = 1;      // promiscuous: no address match, no CRC, no whitening
     const int PROTOCOL_ESB = 2;      // Nordic (Enhanced) ShockBurst - compatible with nRF24L01(+)
+    const int PROTOCOL_ZIGBEE = 3;   // IEEE 802.15.4 (Zigbee/Thread/Matter) - O-QPSK only
     const int PROTOCOL_GAZELL = 5;   // Nordic Gazell - see the NRF_GZLL_AVAILABLE block below
-    // reserved for later: PROTOCOL_ZIGBEE = 3, PROTOCOL_BLE = 4
+    // reserved for later: PROTOCOL_BLE = 4
 
     int currentProtocol = PROTOCOL_MAKECODE;
 
@@ -299,16 +300,26 @@ CODAL_RADIO* getRadio() {
     // restores normal rf.on()/send()/recv() behaviour exactly as it was
     uint32_t savedCRCCNF, savedPCNF0, savedPCNF1, savedDATAWHITEIV, savedSHORTS, savedMODE;
     bool savedRegistersValid = false;
-    // +2: large enough for ESB's [S0][S1][payload...] layout as well as
-    // PROTOCOL_RAW's plain [payload...] layout - see currentCaptureLength()
-    uint8_t rawRxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2];
+
+    // buffer must fit the largest protocol's on-air frame:
+    //  - PROTOCOL_RAW:    plain [payload...]           (32 bytes)
+    //  - PROTOCOL_ESB:    [S0][S1][payload...]         (34 bytes)
+    //  - PROTOCOL_ZIGBEE: [PHR len][PSDU...] up to 128 (IEEE 802.15.4, 127-byte max frame)
+    const int RAW_BUF_SIZE = 128;
+    uint8_t rawRxBuf[RAW_BUF_SIZE];
 
     // how many bytes of rawRxBuf actually hold real data for the active
     // protocol - PROTOCOL_RAW has no header (PCNF0=0), PROTOCOL_ESB has a
-    // 2-byte [S0][S1] header in front of the payload (see enterEsbProtocol)
+    // 2-byte [S0][S1] header, PROTOCOL_ZIGBEE has a 1-byte PHR length field
+    // (bits 0-6) followed by that many PSDU bytes - so its length is dynamic
     int currentCaptureLength() {
         switch (currentProtocol) {
             case PROTOCOL_ESB: return DEVICE_RADIO_MAX_PACKET_SIZE + 2;
+            case PROTOCOL_ZIGBEE: {
+                int n = 1 + (rawRxBuf[0] & 0x7F); // PHR length byte + PSDU
+                if (n > RAW_BUF_SIZE) n = RAW_BUF_SIZE;
+                return n;
+            }
             default: return DEVICE_RADIO_MAX_PACKET_SIZE;
         }
     }
@@ -359,6 +370,7 @@ CODAL_RADIO* getRadio() {
         while (NRF_RADIO->EVENTS_DISABLED == 0) {}
         NRF_RADIO->EVENTS_DISABLED = 0;
 
+        currentModulation = MODULATION_GFSK; // ESB is a GFSK protocol - nRF24L01(+) never uses O-QPSK
         NRF_RADIO->MODE = modulationMode(); // GFSK = nRF24L01(+) default 1Mbit rate
 
         // legacy ShockBurst framing: S0=1 byte, no length field, S1=1 byte (PCF)
@@ -403,6 +415,48 @@ CODAL_RADIO* getRadio() {
             | (RADIO_PCNF1_ENDIAN_Little << RADIO_PCNF1_ENDIAN_Pos)
             | (0 << RADIO_PCNF1_WHITEEN_Pos); // whitening off - capture the raw air bytes
         // keep only READY->START (auto-arm on enable) and ADDRESS->RSSISTART (RSSI per capture)
+        NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
+            | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
+
+        NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+        NRF_RADIO->TASKS_RXEN = 1;
+        while (NRF_RADIO->EVENTS_READY == 0) {}
+        NRF_RADIO->EVENTS_READY = 0;
+        NRF_RADIO->TASKS_START = 1;
+    }
+
+    // ---------- IEEE 802.15.4 (Zigbee / Thread / Matter) ----------
+    // The 802.15.4 PHY only exists on the O-QPSK modulation, so this protocol
+    // forces O-QPSK regardless of rf.changeModulation(). Frame on air:
+    //   [preamble 4x00][SFD 0xA7][PHR length: 7 bits][PSDU ... incl. 2-byte FCS]
+    // The RADIO handles preamble/SFD itself in this mode; we only see the buffer
+    // as [PHR][PSDU...]. This is a promiscuous sniffer/injector: no PAN/address
+    // filtering (that's a MAC-layer job), so scanRaw() returns every frame the
+    // radio locks onto on the current channel. CRC is computed by hardware but
+    // frames are handed up regardless of pass/fail (we don't drop on bad CRC).
+    void enterZigbeeProtocol() {
+        NRF_RADIO->TASKS_DISABLE = 1;
+        while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+        NRF_RADIO->EVENTS_DISABLED = 0;
+
+        currentModulation = MODULATION_OQPSK; // 802.15.4 is O-QPSK only
+        NRF_RADIO->MODE = RADIO_MODE_MODE_Ieee802154_250Kbit << RADIO_MODE_MODE_Pos;
+
+        // PHR: 8-bit length field, 32-bit zero preamble, CRC counted in length
+        NRF_RADIO->PCNF0 = (8 << RADIO_PCNF0_LFLEN_Pos)
+            | (RADIO_PCNF0_PLEN_32bitZero << RADIO_PCNF0_PLEN_Pos)
+            | (RADIO_PCNF0_CRCINC_Include << RADIO_PCNF0_CRCINC_Pos);
+        NRF_RADIO->PCNF1 = ((uint32_t)127 << RADIO_PCNF1_MAXLEN_Pos); // max PSDU, no base addr, no whitening
+
+        // 802.15.4 FCS: CRC-16-CCITT, poly 0x011021, init 0, skip the PHR byte
+        NRF_RADIO->CRCCNF = (RADIO_CRCCNF_LEN_Two << RADIO_CRCCNF_LEN_Pos)
+            | (RADIO_CRCCNF_SKIPADDR_Ieee802154 << RADIO_CRCCNF_SKIPADDR_Pos);
+        NRF_RADIO->CRCPOLY = 0x011021UL;
+        NRF_RADIO->CRCINIT = 0UL;
+
+        NRF_RADIO->SFD = 0xA7; // 802.15.4 start-of-frame delimiter
+
+        // no address matching in 802.15.4 mode
         NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
             | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
 
@@ -483,7 +537,7 @@ CODAL_RADIO* getRadio() {
     }
 #endif
 
-    uint8_t rawTxBuf[DEVICE_RADIO_MAX_PACKET_SIZE + 2]; // same layout as rawRxBuf - see currentCaptureLength()
+    uint8_t rawTxBuf[RAW_BUF_SIZE]; // same layout as rawRxBuf - see currentCaptureLength()
 #endif // RF_NRF52
 
     // ---------- exported functions ----------
@@ -551,6 +605,9 @@ CODAL_RADIO* getRadio() {
                 break;
             case PROTOCOL_ESB:
                 enterEsbProtocol();
+                break;
+            case PROTOCOL_ZIGBEE:
+                enterZigbeeProtocol();
                 break;
             case PROTOCOL_GAZELL:
 #ifdef NRF_GZLL_AVAILABLE
@@ -642,7 +699,7 @@ CODAL_RADIO* getRadio() {
         int rssi = -(int)(NRF_RADIO->RSSISAMPLE);
         int length = currentCaptureLength(); // depends on the active protocol's framing
 
-        uint8_t buf[DEVICE_RADIO_MAX_PACKET_SIZE + 2 + sizeof(int)]; // captured bytes + rssi
+        uint8_t buf[RAW_BUF_SIZE + sizeof(int)]; // captured bytes + rssi
         memset(buf, 0, sizeof(buf));
         memcpy(buf, rawRxBuf, length);
         memcpy(buf + length, &rssi, sizeof(int));
@@ -670,6 +727,8 @@ CODAL_RADIO* getRadio() {
      *  - Raw: up to 32 bytes, sent exactly as given (no header)
      *  - Esb: up to 32 bytes; passed through as the payload, with the [S0][S1]
      *    header bytes rf.scanRaw() exposes as esbS0/esbS1 both set to 0
+     *  - Zigbee (802.15.4): up to 125 bytes of MAC frame WITHOUT the FCS; the
+     *    hardware fills in the PHR length byte and appends the 2-byte FCS
      * MakeCode isn't accepted here - use rf.sendNumber()/sendString()/etc
      * instead, which speak the normal micro:bit packet format.
      * @param protocol which protocol to send with, eg: RFProtocol.Esb
@@ -688,13 +747,21 @@ CODAL_RADIO* getRadio() {
             setProtocol(protocol);
         if (protocol != currentProtocol) return; // setProtocol rejected it (eg. unknown/unavailable)
 
-        int length = currentCaptureLength();
-        int headerLen = length - DEVICE_RADIO_MAX_PACKET_SIZE; // 0 for Raw, 2 for Esb ([S0][S1])
-        int payloadLen = data->length;
-        if (payloadLen > DEVICE_RADIO_MAX_PACKET_SIZE) payloadLen = DEVICE_RADIO_MAX_PACKET_SIZE;
-
         memset(rawTxBuf, 0, sizeof(rawTxBuf));
-        memcpy(rawTxBuf + headerLen, data->data, payloadLen); // S0/S1 (if any) stay 0
+        if (protocol == PROTOCOL_ZIGBEE) {
+            // 802.15.4: buffer is [PHR len][PSDU...]; hardware appends the 2-byte
+            // FCS, so the PHR length must count it. `data` is the MAC frame WITHOUT
+            // FCS, max 125 bytes (125 + 2 FCS = 127-byte frame limit).
+            int payloadLen = data->length;
+            if (payloadLen > 125) payloadLen = 125;
+            rawTxBuf[0] = (uint8_t)(payloadLen + 2); // PHR = PSDU length incl. FCS
+            memcpy(rawTxBuf + 1, data->data, payloadLen);
+        } else {
+            int headerLen = currentCaptureLength() - DEVICE_RADIO_MAX_PACKET_SIZE; // 0 for Raw, 2 for Esb ([S0][S1])
+            int payloadLen = data->length;
+            if (payloadLen > DEVICE_RADIO_MAX_PACKET_SIZE) payloadLen = DEVICE_RADIO_MAX_PACKET_SIZE;
+            memcpy(rawTxBuf + headerLen, data->data, payloadLen); // S0/S1 (if any) stay 0
+        }
 
         // radio is currently RX-armed (setProtocol/enter*Protocol left it
         // listening) - stop, send, then re-arm for RX so scanRaw() keeps working
@@ -738,7 +805,10 @@ CODAL_RADIO* getRadio() {
         if (modulation != MODULATION_GFSK && modulation != MODULATION_OQPSK) return;
         if (radioEnable() != DEVICE_OK) return;
         currentModulation = modulation;
-        if (currentProtocol == PROTOCOL_MAKECODE) return; // applied on next Raw/Esb
+        // Only PROTOCOL_RAW works in either modulation, so only it gets a live
+        // change. ESB forces GFSK and Zigbee forces O-QPSK on entry, and MakeCode
+        // doesn't touch MODE - for those the value is just remembered.
+        if (currentProtocol != PROTOCOL_RAW) return;
 
         // MODE is only latched on RX/TX ramp-up: stop, change, start listening again
         bool wasActive = (NRF_RADIO->STATE != RADIO_STATE_STATE_Disabled);
