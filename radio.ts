@@ -17,7 +17,9 @@ enum RFProtocol {
     Raw = 1,
     //% block="ESB (nRF24L01)"
     Esb = 2,
-    // reserved for later additions: Zigbee = 3, BLE = 4
+    //% block="Zigbee (802.15.4)"
+    Zigbee = 3,
+    // reserved for later additions: BLE = 4
     //% block="Gazell"
     // NOT YET FUNCTIONAL: needs Nordic's closed-source nrf_gzll library linked
     // into this extension first - see the checklist above enterGazellProtocol()
