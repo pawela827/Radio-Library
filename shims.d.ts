@@ -171,6 +171,27 @@ declare namespace rf {
     //% blockId=rf_get_frequency_mhz block="rf actual frequency (MHz)"
     //% advanced=true shim=rf::getFrequencyMHz
     function getFrequencyMHz(): int32;
+
+    /**
+     * Changes the modulation used on air. 0 = GFSK (default, 1 Mbit/s),
+     * 1 = O-QPSK (IEEE 802.15.4, 250 kbit/s). Applies to the Raw/Esb
+     * protocols; while on the normal micro:bit protocol the choice is only
+     * remembered and applied on the next switch to Raw/Esb, so normal
+     * micro:bit messaging keeps working.
+     * @param modulation 0 = GFSK, 1 = O-QPSK
+     */
+    //% help=rf/change-modulation
+    //% weight=2 blockGap=8
+    //% advanced=true shim=rf::setModulation
+    function setModulation(modulation: int32): void;
+
+    /**
+     * Which modulation is selected: 0 = GFSK, 1 = O-QPSK.
+     */
+    //% help=rf/get-modulation
+    //% weight=2 blockGap=8
+    //% advanced=true shim=rf::getModulation
+    function getModulation(): int32;
 }
 
 declare namespace hwinfo {
