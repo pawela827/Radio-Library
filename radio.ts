@@ -21,14 +21,21 @@ enum RFProtocol {
     //% block="Gazell"
     // NOT YET FUNCTIONAL: needs Nordic's closed-source nrf_gzll library linked
     // into this extension first - see the checklist above enterGazellProtocol()
-    // in radio.cpp. Selecting this currently does nothing (setProtocol ignores it).
+    // in rf.cpp. Selecting this currently does nothing (setProtocol ignores it).
     Gazell = 5,
 }
 
 /**
- * Communicate data using radio packets
+ * Communicate data using rf packets
  */
 //% color=#E3008C weight=96 icon="\uf012" groups='["Group", "Broadcast", "Send", "Receive"]'
+enum RFModulation {
+    //% block="GFSK"
+    GFSK = 0,
+    //% block="O-QPSK"
+    OQPSK = 1,
+}
+
 namespace rf {
 
     // keep in sync with CODAL
@@ -104,7 +111,7 @@ namespace rf {
     }
 
     /**
-     * Registers code to run when the radio receives a number.
+     * Registers code to run when the rf receives a number.
      */
     //% help=rf/on-received-number
     //% blockId=rf_on_number_drag block="on rf received" blockGap=16
@@ -541,5 +548,31 @@ namespace rf {
     //% weight=21
     export function sendRaw(protocol: RFProtocol, data: Buffer) {
         sendRawAntennaPacket(protocol, data);
+    }
+
+    /**
+     * Changes the modulation used on air: GFSK (default, 1 Mbit/s) or
+     * O-QPSK (IEEE 802.15.4, 250 kbit/s). Works with the Raw/Esb protocols;
+     * on the normal micro:bit protocol it is remembered and applied on the
+     * next switch to Raw/Esb.
+     * @param modulation eg: RFModulation.GFSK
+     */
+    //% help=rf/change-modulation
+    //% blockId=rf_change_modulation block="rf change modulation to %modulation"
+    //% group="Receive"
+    //% weight=15
+    export function changeModulation(modulation: RFModulation) {
+        setModulation(modulation);
+    }
+
+    /**
+     * Which modulation is currently selected.
+     */
+    //% help=rf/get-modulation
+    //% blockId=rf_get_modulation block="rf modulation"
+    //% group="Receive"
+    //% weight=14
+    export function getRFModulation(): RFModulation {
+        return getModulation();
     }
 }
