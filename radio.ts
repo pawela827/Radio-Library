@@ -446,15 +446,23 @@ namespace rf {
 
         private constructor(public readonly data: Buffer) { }
 
-        // whole capture minus the trailing 4-byte RSSI (see readRawAntennaPacket in radio.cpp).
+        // trailing 8 bytes are rssi (int32) then crcOk (int32) - see
+        // readRawAntennaPacket in rf.cpp. bytes = the capture without them.
         // On RFProtocol.Raw this is the plain payload; on RFProtocol.Esb it's
-        // [S0][S1][payload...] - use esbPayload/esbS0/esbS1 to split those apart.
+        // [S0][S1][payload...]; on RFProtocol.Zigbee it's [PHR len][PSDU...].
         get bytes() {
-            return this.data.slice(0, this.data.length - 4);
+            return this.data.slice(0, this.data.length - 8);
         }
 
         get rssi() {
-            return this.data.getNumber(NumberFormat.Int32LE, this.data.length - 4);
+            return this.data.getNumber(NumberFormat.Int32LE, this.data.length - 8);
+        }
+
+        // whether the frame passed its protocol's hardware CRC (Esb/Zigbee).
+        // Meaningless on Raw (CRC is disabled there). This is the test used to
+        // confirm a capture really is a valid frame of the active protocol.
+        get crcOk() {
+            return this.data.getNumber(NumberFormat.Int32LE, this.data.length - 4) != 0;
         }
 
         // ESB's PCF byte 0 (S0) - unused in the legacy ShockBurst framing this uses
@@ -469,7 +477,12 @@ namespace rf {
 
         // ESB payload, with the [S0][S1] header stripped off
         get esbPayload() {
-            return this.data.slice(2, this.data.length - 4);
+            return this.data.slice(2, this.data.length - 8);
+        }
+
+        // Zigbee/802.15.4 PSDU, with the leading PHR length byte stripped off
+        get zigbeePayload() {
+            return this.data.slice(1, this.data.length - 8);
         }
     }
 
