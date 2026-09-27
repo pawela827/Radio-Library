@@ -127,3 +127,11 @@ namespace pxsim.rf {
 
 }
 (pxsim as any).rf = pxsim.rf;
+
+namespace pxsim.hwinfo {
+    // the simulator has no USB interface chip to ask - report "unknown"
+    export function boardId(): number {
+        return 0;
+    }
+}
+(pxsim as any).hwinfo = pxsim.hwinfo;
