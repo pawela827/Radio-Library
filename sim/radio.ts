@@ -76,11 +76,12 @@ namespace pxsim.rf {
         if (!n)
             return undefined;
 
-        const rbuf = BufferMethods.createBuffer(n + 4);
+        const rbuf = BufferMethods.createBuffer(n + 8);
         for (let i = 0; i < buf.length; ++i)
             rbuf.data[i] = buf[i];
-        // append RSSI
+        // append RSSI, then crcOk (sim has no real CRC, so treat as ok = 1)
         BufferMethods.setNumber(rbuf, BufferMethods.NumberFormat.Int32LE, n, packet.rssi)
+        BufferMethods.setNumber(rbuf, BufferMethods.NumberFormat.Int32LE, n + 4, 1)
         return rbuf;
     }
 
