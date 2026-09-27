@@ -115,6 +115,16 @@ namespace pxsim.rf {
         return 2360 + state.band;
     }
 
+    // simulator has no real modulation - only remember the choice
+    let simModulation = 0;
+    export function setModulation(modulation: number): void {
+        if (modulation === 0 || modulation === 1)
+            simModulation = modulation;
+    }
+    export function getModulation(): number {
+        return simModulation;
+    }
+
     export function off(){
         const state = pxsim.getRFState();
         state.off();
