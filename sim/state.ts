@@ -85,8 +85,9 @@ namespace pxsim {
     export const RF_PROTOCOL_MAKECODE = 0;
     export const RF_PROTOCOL_RAW = 1;
     export const RF_PROTOCOL_ESB = 2;
+    export const RF_PROTOCOL_ZIGBEE = 3;
     export const RF_PROTOCOL_GAZELL = 5; // not functional yet - see radio.cpp
-    // reserved for later: Zigbee = 3, BLE = 4
+    // reserved for later: BLE = 4
 
     export class RFState {
         power = 0;
@@ -164,7 +165,8 @@ namespace pxsim {
                 // (mirrors radio.cpp's default: case in setProtocol's switch)
                 if (protocol !== RF_PROTOCOL_MAKECODE
                     && protocol !== RF_PROTOCOL_RAW
-                    && protocol !== RF_PROTOCOL_ESB) return;
+                    && protocol !== RF_PROTOCOL_ESB
+                    && protocol !== RF_PROTOCOL_ZIGBEE) return;
                 this.protocol = protocol;
             }
         }
@@ -208,7 +210,7 @@ namespace pxsim {
                 // (The simulator can't talk to a real nRF24L01, so Esb here is
                 // only a stand-in for testing rf.scanRaw()/esbPayload logic,
                 // not a real ShockBurst address/CRC filter.)
-                if (this.protocol === RF_PROTOCOL_RAW || this.protocol === RF_PROTOCOL_ESB) {
+                if (this.protocol === RF_PROTOCOL_RAW || this.protocol === RF_PROTOCOL_ESB || this.protocol === RF_PROTOCOL_ZIGBEE) {
                     this.promiscuousDatagram.queue(packet)
                 }
             }
