@@ -804,3 +804,21 @@ CODAL_RADIO* getRadio() {
 #endif
     }
 }
+
+// ---------- informacje o płytce (aplikacja Settings -> About) ----------
+namespace hwinfo {
+    /**
+     * Board ID of this micro:bit, read from its USB interface chip - the same
+     * 4 hex digits DAPLink reports (eg. 0x9904 = V2.00, 0x9905 = V2.20,
+     * 0x9906 = V2.21). Returns 0 when unavailable (eg. on V1).
+     */
+    //%
+    int boardId() {
+#if RF_NRF52
+        MicroBitVersion v = uBit.power.getVersion();
+        return (int)v.board;
+#else
+        return 0;
+#endif
+    }
+}
