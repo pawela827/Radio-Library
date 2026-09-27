@@ -342,12 +342,24 @@ CODAL_RADIO* getRadio() {
             ((uint32_t)esbAddress[3] << 8) | (uint32_t)esbAddress[4]);
     }
 
+    // ---------- modulation (rf.changeModulation) ----------
+    // keep in sync with RFModulation in radio.ts
+    const int MODULATION_GFSK = 0;   // Nrf_1Mbit - default, what Raw/Esb always used so far
+    const int MODULATION_OQPSK = 1;  // Ieee802154_250Kbit - IEEE 802.15.4 (Zigbee/Thread) PHY
+    int currentModulation = MODULATION_GFSK;
+
+    uint32_t modulationMode() {
+        if (currentModulation == MODULATION_OQPSK)
+            return RADIO_MODE_MODE_Ieee802154_250Kbit << RADIO_MODE_MODE_Pos;
+        return RADIO_MODE_MODE_Nrf_1Mbit << RADIO_MODE_MODE_Pos;
+    }
+
     void enterEsbProtocol() {
         NRF_RADIO->TASKS_DISABLE = 1;
         while (NRF_RADIO->EVENTS_DISABLED == 0) {}
         NRF_RADIO->EVENTS_DISABLED = 0;
 
-        NRF_RADIO->MODE = RADIO_MODE_MODE_Nrf_1Mbit << RADIO_MODE_MODE_Pos; // matches nRF24L01(+) default rate
+        NRF_RADIO->MODE = modulationMode(); // GFSK = nRF24L01(+) default 1Mbit rate
 
         // legacy ShockBurst framing: S0=1 byte, no length field, S1=1 byte (PCF)
         NRF_RADIO->PCNF0 = (1 << RADIO_PCNF0_S0LEN_Pos)
@@ -383,7 +395,7 @@ CODAL_RADIO* getRadio() {
         while (NRF_RADIO->EVENTS_DISABLED == 0) {}
         NRF_RADIO->EVENTS_DISABLED = 0;
 
-        NRF_RADIO->MODE = RADIO_MODE_MODE_Nrf_1Mbit << RADIO_MODE_MODE_Pos; // 1Mbit catches the widest range of GFSK gear
+        NRF_RADIO->MODE = modulationMode(); // GFSK 1Mbit by default, or O-QPSK
         NRF_RADIO->CRCCNF = RADIO_CRCCNF_LEN_Disabled; // don't drop "invalid" CRC packets
         // treat everything as one long raw blob: 0-bit length field, max-size static payload
         NRF_RADIO->PCNF0 = 0;
@@ -707,6 +719,59 @@ CODAL_RADIO* getRadio() {
         NRF_RADIO->TASKS_START = 1;
 #else
         (void)protocol; (void)data;
+#endif
+    }
+
+    /**
+     * Changes the modulation used on air. 0 = GFSK (default, 1 Mbit/s),
+     * 1 = O-QPSK (IEEE 802.15.4, 250 kbit/s). Applies to the Raw/Esb
+     * protocols; while on the normal micro:bit protocol the choice is only
+     * remembered and applied on the next switch to Raw/Esb, so normal
+     * micro:bit messaging keeps working.
+     * @param modulation 0 = GFSK, 1 = O-QPSK
+     */
+    //% help=rf/change-modulation
+    //% weight=2 blockGap=8
+    //% advanced=true
+    void setModulation(int modulation) {
+#if RF_NRF52
+        if (modulation != MODULATION_GFSK && modulation != MODULATION_OQPSK) return;
+        if (radioEnable() != DEVICE_OK) return;
+        currentModulation = modulation;
+        if (currentProtocol == PROTOCOL_MAKECODE) return; // applied on next Raw/Esb
+
+        // MODE is only latched on RX/TX ramp-up: stop, change, start listening again
+        bool wasActive = (NRF_RADIO->STATE != RADIO_STATE_STATE_Disabled);
+        if (wasActive) {
+            NRF_RADIO->EVENTS_DISABLED = 0;
+            NRF_RADIO->TASKS_DISABLE = 1;
+            while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+            NRF_RADIO->EVENTS_DISABLED = 0;
+        }
+        NRF_RADIO->MODE = modulationMode();
+        if (wasActive) {
+            NRF_RADIO->EVENTS_READY = 0;
+            NRF_RADIO->TASKS_RXEN = 1;
+            while (NRF_RADIO->EVENTS_READY == 0) {}
+            NRF_RADIO->EVENTS_READY = 0;
+            NRF_RADIO->TASKS_START = 1;
+        }
+#else
+        (void)modulation;
+#endif
+    }
+
+    /**
+     * Which modulation is selected: 0 = GFSK, 1 = O-QPSK.
+     */
+    //% help=rf/get-modulation
+    //% weight=2 blockGap=8
+    //% advanced=true
+    int getModulation() {
+#if RF_NRF52
+        return currentModulation;
+#else
+        return 0;
 #endif
     }
 
