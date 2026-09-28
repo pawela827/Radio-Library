@@ -86,6 +86,7 @@ namespace pxsim {
     export const RF_PROTOCOL_RAW = 1;
     export const RF_PROTOCOL_ESB = 2;
     export const RF_PROTOCOL_ZIGBEE = 3;
+    export const RF_PROTOCOL_MICROBIT = 6; // micro:bit sniffer (any group)
     export const RF_PROTOCOL_GAZELL = 5; // not functional yet - see radio.cpp
     // reserved for later: BLE = 4
 
@@ -166,7 +167,8 @@ namespace pxsim {
                 if (protocol !== RF_PROTOCOL_MAKECODE
                     && protocol !== RF_PROTOCOL_RAW
                     && protocol !== RF_PROTOCOL_ESB
-                    && protocol !== RF_PROTOCOL_ZIGBEE) return;
+                    && protocol !== RF_PROTOCOL_ZIGBEE
+                    && protocol !== RF_PROTOCOL_MICROBIT) return;
                 this.protocol = protocol;
             }
         }
@@ -210,7 +212,7 @@ namespace pxsim {
                 // (The simulator can't talk to a real nRF24L01, so Esb here is
                 // only a stand-in for testing rf.scanRaw()/esbPayload logic,
                 // not a real ShockBurst address/CRC filter.)
-                if (this.protocol === RF_PROTOCOL_RAW || this.protocol === RF_PROTOCOL_ESB || this.protocol === RF_PROTOCOL_ZIGBEE) {
+                if (this.protocol === RF_PROTOCOL_RAW || this.protocol === RF_PROTOCOL_ESB || this.protocol === RF_PROTOCOL_ZIGBEE || this.protocol === RF_PROTOCOL_MICROBIT) {
                     this.promiscuousDatagram.queue(packet)
                 }
             }
