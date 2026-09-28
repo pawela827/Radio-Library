@@ -20,6 +20,8 @@ enum RFProtocol {
     //% block="Zigbee (802.15.4)"
     Zigbee = 3,
     // reserved for later additions: BLE = 4
+    //% block="micro:bit (any group)"
+    Microbit = 6,
     //% block="Gazell"
     // NOT YET FUNCTIONAL: needs Nordic's closed-source nrf_gzll library linked
     // into this extension first - see the checklist above enterGazellProtocol()
@@ -483,6 +485,16 @@ namespace rf {
         // Zigbee/802.15.4 PSDU, with the leading PHR length byte stripped off
         get zigbeePayload() {
             return this.data.slice(1, this.data.length - 8);
+        }
+
+        // micro:bit frame group (byte [2] of [length][version][group][protocol][payload])
+        get microbitGroup() {
+            return this.data.length > 2 ? this.data[2] : 0;
+        }
+
+        // micro:bit payload, after the 4-byte [length][version][group][protocol] header
+        get microbitPayload() {
+            return this.data.slice(4, this.data.length - 8);
         }
     }
 
