@@ -292,6 +292,7 @@ CODAL_RADIO* getRadio() {
     const int PROTOCOL_ESB = 2;      // Nordic (Enhanced) ShockBurst - compatible with nRF24L01(+)
     const int PROTOCOL_ZIGBEE = 3;   // IEEE 802.15.4 (Zigbee/Thread/Matter) - O-QPSK only
     const int PROTOCOL_GAZELL = 5;   // Nordic Gazell - see the NRF_GZLL_AVAILABLE block below
+    const int PROTOCOL_MICROBIT = 6; // micro:bit packets from any group (receive-only sniffer)
     // reserved for later: PROTOCOL_BLE = 4
 
     int currentProtocol = PROTOCOL_MAKECODE;
@@ -317,6 +318,11 @@ CODAL_RADIO* getRadio() {
             case PROTOCOL_ESB: return DEVICE_RADIO_MAX_PACKET_SIZE + 2;
             case PROTOCOL_ZIGBEE: {
                 int n = 1 + (rawRxBuf[0] & 0x7F); // PHR length byte + PSDU
+                if (n > RAW_BUF_SIZE) n = RAW_BUF_SIZE;
+                return n;
+            }
+            case PROTOCOL_MICROBIT: {
+                int n = 1 + rawRxBuf[0]; // length byte + [version][group][protocol][payload]
                 if (n > RAW_BUF_SIZE) n = RAW_BUF_SIZE;
                 return n;
             }
@@ -467,6 +473,59 @@ CODAL_RADIO* getRadio() {
         NRF_RADIO->TASKS_START = 1;
     }
 
+    // ---------- micro:bit sniffer (any group) ----------
+    // Same on-air framing as the normal micro:bit radio (CODAL MicroBitRadio):
+    // GFSK 1Mbit, 4-byte base address "ubit" (0x75626974), 1-byte address prefix
+    // that IS the group, 2-byte CRC, whitening on. The normal driver only listens
+    // to one group at a time (prefix must match). The nRF hardware has 8 logical
+    // addresses (prefixes) it can match at once, so this listens to 8 groups per
+    // visit and sweeps the next 8 each time it's re-entered - covering all 256
+    // groups over 32 visits. Receive only: the group of each frame is byte [2] of
+    // the captured buffer. (This does not touch the CODAL driver, so switching
+    // back to PROTOCOL_MAKECODE restores normal messaging via disable()/enable().)
+    int mbGroupBase = 0; // first of the 8 groups currently being matched
+
+    void enterMicrobitProtocol() {
+        NRF_RADIO->TASKS_DISABLE = 1;
+        while (NRF_RADIO->EVENTS_DISABLED == 0) {}
+        NRF_RADIO->EVENTS_DISABLED = 0;
+
+        currentModulation = MODULATION_GFSK; // micro:bit radio is always GFSK 1Mbit
+        NRF_RADIO->MODE = RADIO_MODE_MODE_Nrf_1Mbit << RADIO_MODE_MODE_Pos;
+
+        // exactly the register setup CODAL MicroBitRadio::enable() uses
+        NRF_RADIO->BASE0 = 0x75626974UL;              // "ubit"
+        NRF_RADIO->PCNF0 = 0x00000008UL;              // LFLEN=8, S0LEN=0, S1LEN=0
+        NRF_RADIO->PCNF1 = 0x02040000UL | (uint32_t)RAW_BUF_SIZE; // BALEN=4, WHITEEN on, MAXLEN
+        NRF_RADIO->CRCCNF = RADIO_CRCCNF_LEN_Two << RADIO_CRCCNF_LEN_Pos;
+        NRF_RADIO->CRCINIT = 0xFFFFUL;
+        NRF_RADIO->CRCPOLY = 0x11021UL;
+        NRF_RADIO->DATAWHITEIV = 0x18;
+
+        // 8 logical addresses = 8 groups matched at once (prefix byte = group)
+        NRF_RADIO->PREFIX0 = (uint32_t)((mbGroupBase & 0xFF))
+            | ((uint32_t)((mbGroupBase + 1) & 0xFF) << 8)
+            | ((uint32_t)((mbGroupBase + 2) & 0xFF) << 16)
+            | ((uint32_t)((mbGroupBase + 3) & 0xFF) << 24);
+        NRF_RADIO->PREFIX1 = (uint32_t)((mbGroupBase + 4) & 0xFF)
+            | ((uint32_t)((mbGroupBase + 5) & 0xFF) << 8)
+            | ((uint32_t)((mbGroupBase + 6) & 0xFF) << 16)
+            | ((uint32_t)((mbGroupBase + 7) & 0xFF) << 24);
+        NRF_RADIO->RXADDRESSES = 0xFF; // listen on all 8 logical addresses
+
+        NRF_RADIO->SHORTS = (1 << RADIO_SHORTS_READY_START_Pos)
+            | (1 << RADIO_SHORTS_ADDRESS_RSSISTART_Pos);
+
+        NRF_RADIO->PACKETPTR = (uint32_t)rawRxBuf;
+        NRF_RADIO->TASKS_RXEN = 1;
+        while (NRF_RADIO->EVENTS_READY == 0) {}
+        NRF_RADIO->EVENTS_READY = 0;
+        NRF_RADIO->TASKS_START = 1;
+
+        // next visit sweeps the following 8 groups (wraps after 256)
+        mbGroupBase = (mbGroupBase + 8) & 0xFF;
+    }
+
     void enterMakeCodeProtocol() {
         NRF_RADIO->TASKS_DISABLE = 1;
         while (NRF_RADIO->EVENTS_DISABLED == 0) {}
@@ -609,6 +668,9 @@ CODAL_RADIO* getRadio() {
             case PROTOCOL_ZIGBEE:
                 enterZigbeeProtocol();
                 break;
+            case PROTOCOL_MICROBIT:
+                enterMicrobitProtocol();
+                break;
             case PROTOCOL_GAZELL:
 #ifdef NRF_GZLL_AVAILABLE
                 enterGazellProtocol();
@@ -746,6 +808,7 @@ CODAL_RADIO* getRadio() {
     void sendRawAntennaPacket(int protocol, Buffer data) {
 #if RF_NRF52
         if (protocol == PROTOCOL_MAKECODE || protocol == PROTOCOL_GAZELL) return;
+        if (protocol == PROTOCOL_MICROBIT) return; // sniffer only - send via rf.sendNumber()/etc
         if (NULL == data || data->length == 0) return;
 
         if (protocol != currentProtocol)
